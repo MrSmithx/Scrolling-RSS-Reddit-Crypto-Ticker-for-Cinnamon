@@ -113,8 +113,6 @@ class RSSDesklet extends Desklet.Desklet {
 
         this.cryptoData = [];
 
-        this.tickerBoxNext = null;
-
         this._loops = {};
 
         this.cryptoSymbolMap = {};
@@ -1087,6 +1085,39 @@ class RSSDesklet extends Desklet.Desklet {
         );
 
         row.add_actor(label);
+
+        // =====================================
+        // HOVER HANDLER
+        // =====================================
+
+        // Save original style
+        label._normalStyle = `
+            font-family: "${this.fontParts.family}";
+            font-size: ${this.fontParts.size}px;
+            font-weight: ${this.fontParts.weight};
+            font-style: ${this.fontParts.style};
+            color: ${this.fontColor};
+        `;
+
+        // Hover style
+        label._hoverStyle = `
+            font-family: "${this.fontParts.family}";
+            font-size: ${this.fontParts.size}px;
+            font-weight: ${this.fontParts.weight};
+            font-style: ${this.fontParts.style};
+            text-decoration: underline;
+            color: ${this.fontColor};
+        `;
+
+        // Mouse enter
+        btn.connect("enter-event", () => {
+            label.set_style(label._hoverStyle);
+        });
+
+        // Mouse leave
+        btn.connect("leave-event", () => {
+            label.set_style(label._normalStyle);
+        });
 
         btn.add_actor(row);
 

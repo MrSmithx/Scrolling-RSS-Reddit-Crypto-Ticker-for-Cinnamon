@@ -182,7 +182,6 @@ The desklet stores cached data under:
 
 ```text
 ~/.cache/rss-desklet-cache.json
-~/.cache/rss-desklet-coins.json
 ```
 
 Favicons are cached in:

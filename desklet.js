@@ -214,7 +214,7 @@ class RSSDesklet extends Desklet.Desklet {
         this.container.reactive = true;
 
         this.container.connect(
-            "button-press-event",
+            "button-release-event",
             (actor, event) => {
 
                 if (event.get_button() === 3) {
@@ -263,6 +263,18 @@ class RSSDesklet extends Desklet.Desklet {
     // ==================================================
     // HELPERS
     // ==================================================
+
+    _updateLastRefreshTime() {
+
+        this.lastRefreshTime = new Date();
+
+        if (!this.lastRefreshMenuItem)
+            return;
+
+        this.lastRefreshMenuItem.label.text =
+            "Last Refresh: " +
+            this.lastRefreshTime.toLocaleString();
+    }
 
     _setNoExpand(actor) {
 
@@ -530,7 +542,6 @@ class RSSDesklet extends Desklet.Desklet {
 
     _addContextMenu() {
 
-        // Create menu
         this._menu = new PopupMenu.PopupMenu(
             this.actor,
             0.0,
@@ -544,11 +555,15 @@ class RSSDesklet extends Desklet.Desklet {
         this._menuManager.addMenu(this._menu);
 
         // ---------------------------------
-        // Refresh
+        // Refresh Feeds
         // ---------------------------------
 
         const refreshItem =
-            new PopupMenu.PopupMenuItem("Refresh Feeds");
+            new PopupMenu.PopupIconMenuItem(
+                "Refresh All Feeds",
+                "view-refresh-symbolic",
+                St.IconType.SYMBOLIC
+            );
 
         refreshItem.connect("activate", () => {
 
@@ -557,6 +572,8 @@ class RSSDesklet extends Desklet.Desklet {
                 "Refreshing Feeds..."
             );
 
+            this._updateLastRefreshTime();
+
             this._fetchCrypto();
             this._fetchFeeds();
         });
@@ -564,24 +581,30 @@ class RSSDesklet extends Desklet.Desklet {
         this._menu.addMenuItem(refreshItem);
 
         // ---------------------------------
-        // Right click handler
+        // Separator
         // ---------------------------------
 
-        this.actor.reactive = true;
+        this._menu.addMenuItem(
+            new PopupMenu.PopupSeparatorMenuItem()
+        );
 
-        this.actor.connect(
-            "button-release-event",
-            (actor, event) => {
+        // ---------------------------------
+        // Last Refresh Time
+        // ---------------------------------
 
-                if (event.get_button() === 3) {
+        this.lastRefreshMenuItem =
+            new PopupMenu.PopupMenuItem(
+                "Last Refresh: Never"
+            );
 
-                    this._menu.toggle();
+        this.lastRefreshMenuItem.setSensitive(false);
 
-                    return Clutter.EVENT_STOP;
-                }
+        this.lastRefreshMenuItem.label.set_style(`
+            color: white;
+        `);
 
-                return Clutter.EVENT_PROPAGATE;
-            }
+        this._menu.addMenuItem(
+            this.lastRefreshMenuItem
         );
     }
 
@@ -1338,6 +1361,8 @@ class RSSDesklet extends Desklet.Desklet {
     }
 
     _fetchFeeds() {
+
+        this._updateLastRefreshTime();
 
         let feeds = this._getFeedList();
 

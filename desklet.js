@@ -14,6 +14,19 @@ const Util = imports.misc.util;
 
 const Clutter = imports.gi.Clutter;
 
+const DESKLET_DIR =
+    imports.ui.deskletManager
+        .deskletMeta["rssTicker@martyn"]
+        .path;
+
+imports.searchPath.unshift(
+    `${DESKLET_DIR}/services`
+);
+
+const FeedParser = imports.FeedParser.FeedParser;
+const CacheService = imports.CacheService.CacheService;
+const CryptoService = imports.CryptoService.CryptoService;
+
 class RSSDesklet extends Desklet.Desklet {
 
     constructor(metadata, deskletId) {
@@ -50,35 +63,44 @@ class RSSDesklet extends Desklet.Desklet {
             deskletId
         );
 
-        [
-            "showRSS",
-            "showCrypto",
-            "maxHeadlines",
-            "showSource",
-            "randomise",
-            "showFavicons",
-            "enableReddit",
-            "maxRedditHeadlines",
-            "showRedditSource",
-            "AllowNSFW",
-            "redditSort"
-        ].forEach(k => this._bindSetting(k, this._reload));
+        const settingGroups = {
+            _reload: [
+                "maxHeadlines",
+                "showSource",
+                "randomise",
+                "showFavicons",
+                "maxRedditHeadlines",
+                "showRedditSource",
+                "showRedditIcons",
+                "AllowNSFW",
+                "redditSort"
+            ],
+            _applyStyle: [
+                "backgroundOpacity",
+                "backgroundColor",
+                "deskletWidth",
+                "deskletHeight",
+                "fontFamily",
+                "fontColor",
+                "textOpacity",
+                "enableFade"
+            ],
+            _startTicker: [
+                "speed",
+                "scrollReverse"
+            ],
+            _rebuildFromScratch: [
+                "showRSS",
+                "enableReddit",
+                "showCrypto"
+            ]
+        };
 
-        [
-            "backgroundOpacity",
-            "backgroundColor",
-            "deskletWidth",
-            "deskletHeight",
-            "fontFamily",
-            "fontColor",
-            "textOpacity",
-            "enableFade"
-        ].forEach(k => this._bindSetting(k, this._applyStyle));
-
-        [
-            "speed",
-            "scrollReverse"
-        ].forEach(k => this._bindSetting(k, this._startTicker));
+        Object.entries(settingGroups).forEach(([method, keys]) => {
+            keys.forEach(key =>
+                this._bindSetting(key, this[method])
+            );
+        });
 
         this._bindSetting("refreshInterval", this._restartRefresh);
         this._bindSetting("redditRefreshInterval", this._restartRedditRefresh);
@@ -105,6 +127,15 @@ class RSSDesklet extends Desklet.Desklet {
 
     _initState() {
 
+        this.feedParser = new FeedParser();
+
+        this.cache = new CacheService();
+
+        this.cryptoService = new CryptoService(
+            this._httpGet.bind(this),
+            this.cache
+        );
+
         this.offset = 0;
 
         this.isPaused = false;
@@ -112,6 +143,8 @@ class RSSDesklet extends Desklet.Desklet {
         this.fontParts = this._getFontParts();
 
         this.cryptoData = [];
+
+        this.usingCachedData = false;
 
         this._loops = {};
 
@@ -125,13 +158,13 @@ class RSSDesklet extends Desklet.Desklet {
 
         this.actor.style_class = "rss-root";
 
-        this.container = this._createBox({
+        this.container = this._createActor(St.BoxLayout, {
             reactive: true,
             clip_to_allocation: true,
             vertical: false
         });
 
-        this.headlineButton = this._createBox({
+        this.headlineButton = this._createActor(St.BoxLayout, {
             reactive: true,
             track_hover: true,
             can_focus: true
@@ -139,16 +172,32 @@ class RSSDesklet extends Desklet.Desklet {
 
         this.headlineButton.style_class = "rss-headline-button";
 
-        this.tickerViewport = this._createWidget({
+        this.cacheLabel = this._createLabel(
+            "Offline Cache",
+            "#ffaa00",
+            `
+                padding-left: 10px;
+                padding-right: 10px;
+                font-weight: bold;
+            `
+        );
+
+        this._setCenter(this.cacheLabel);
+
+        this.cacheLabel.hide();
+
+        this.container.add_actor(this.cacheLabel);
+
+        this.tickerViewport = this._createActor(St.Widget, {
             layout_manager: new Clutter.BinLayout(),
             clip_to_allocation: true
         });
 
-        this.tickerContainer = this._createWidget({
+        this.tickerContainer = this._createActor(St.Widget, {
             layout_manager: new Clutter.FixedLayout()
         });
 
-        this.tickerBox1 = this._createBox({
+        this.tickerBox1 = this._createActor(St.BoxLayout, {
             reactive: true
         });
 
@@ -162,14 +211,26 @@ class RSSDesklet extends Desklet.Desklet {
 
         this.tickerViewport.add_actor(this.tickerContainer);
 
-        this.leftFade = this._createWidget({
+        this.emptyLabel = this._createLabel(
+            "No Feeds Configured"
+        );
+
+        this._setCenter(this.emptyLabel);
+
+        this.emptyLabel.hide();
+
+        this.tickerViewport.add_actor(
+            this.emptyLabel
+        );
+
+        this.leftFade = this._createActor(St.Widget, {
             reactive: false
         });
 
         this.tickerContainer.add_actor(this.leftFade);
         this.headlineButton.add_actor(this.leftFade);
 
-        this.rightFade = this._createWidget({
+        this.rightFade = this._createActor(St.Widget, {
             reactive: false
         });
 
@@ -207,10 +268,6 @@ class RSSDesklet extends Desklet.Desklet {
             () => Clutter.EVENT_PROPAGATE
         );
 
-        // =====================================
-        // RIGHT CLICK MENU
-        // =====================================
-
         this.container.reactive = true;
 
         this.container.connect(
@@ -232,19 +289,12 @@ class RSSDesklet extends Desklet.Desklet {
     _startServices() {
 
         this._loadCache();
-
         this._fetchFeeds();
-
         this._fetchCrypto();
-
         this._startRedditRefresh();
-
         this._startCryptoRefresh();
-
         this._startTicker();
-
         this._startRefresh();
-
         this._applyStyle();
 
     }
@@ -264,6 +314,43 @@ class RSSDesklet extends Desklet.Desklet {
     // HELPERS
     // ==================================================
 
+    _showEmptyMessage(text = "No Feeds Configured") {
+
+        if (!this.emptyLabel)
+            return;
+
+        this.emptyLabel.set_text(text);
+
+        this.emptyLabel.show();
+
+        if (this.tickerContainer)
+            this.tickerContainer.hide();
+
+        this.tickerWidth = 0;
+    }
+
+    _hideEmptyMessage() {
+
+        if (!this.emptyLabel)
+            return;
+
+        this.emptyLabel.hide();
+
+        if (this.tickerContainer)
+            this.tickerContainer.show();
+    }
+
+    _updateCacheIndicator() {
+
+        if (!this.cacheLabel)
+            return;
+
+        if (this.usingCachedData)
+            this.cacheLabel.show();
+        else
+            this.cacheLabel.hide();
+    }
+
     _updateLastRefreshTime() {
 
         this.lastRefreshTime = new Date();
@@ -274,6 +361,11 @@ class RSSDesklet extends Desklet.Desklet {
         this.lastRefreshMenuItem.label.text =
             "Last Refresh: " +
             this.lastRefreshTime.toLocaleString();
+    }
+
+    _setCenter(actor) {
+        actor.x_align = Clutter.ActorAlign.CENTER;
+        actor.y_align = Clutter.ActorAlign.CENTER;
     }
 
     _setNoExpand(actor) {
@@ -346,23 +438,13 @@ class RSSDesklet extends Desklet.Desklet {
             `
         );
 
-        sep.y_align = Clutter.ActorAlign.CENTER;
+        this._setCenter(sep);
 
         return sep;
     }
 
-    _createBox(props = {}) {
-
-        return new St.BoxLayout({
-            x_expand: false,
-            y_expand: false,
-            ...props
-        });
-    }
-
-    _createWidget(props = {}) {
-
-        return new St.Widget({
+    _createActor(Type, props = {}) {
+        return new Type({
             x_expand: false,
             y_expand: false,
             ...props
@@ -398,6 +480,15 @@ class RSSDesklet extends Desklet.Desklet {
         };
     }
 
+    _getFontCSS() {
+        return `
+            font-family: "${this.fontParts.family}";
+            font-size: ${this.fontParts.size}px;
+            font-weight: ${this.fontParts.weight};
+            font-style: ${this.fontParts.style};
+        `;
+    }
+
     _createLabel(text = "", color = null, extraStyle = "") {
 
         if (!this.fontParts)
@@ -414,10 +505,7 @@ class RSSDesklet extends Desklet.Desklet {
         label.style_class = "rss-label";
 
         label.set_style(`
-            font-family: "${this.fontParts.family}";
-            font-size: ${this.fontParts.size}px;
-            font-weight: ${this.fontParts.weight};
-            font-style: ${this.fontParts.style};
+            ${this._getFontCSS()}
             color: ${color || this.fontColor};
 
             ${extraStyle}
@@ -427,44 +515,6 @@ class RSSDesklet extends Desklet.Desklet {
             Math.floor(this.textOpacity * 255);
 
         return label;
-    }
-
-    _readJSON(path) {
-
-        try {
-
-            if (!GLib.file_test(path, GLib.FileTest.EXISTS))
-                return null;
-
-            const [success, contents] =
-                GLib.file_get_contents(path);
-
-            if (!success || !contents)
-                return null;
-
-            return JSON.parse(contents.toString());
-
-        } catch (e) {
-
-            global.logError(e);
-
-            return null;
-        }
-    }
-
-    _writeJSON(path, data) {
-
-        try {
-
-            GLib.file_set_contents(
-                path,
-                JSON.stringify(data)
-            );
-
-        } catch (e) {
-
-            global.logError(e);
-        }
     }
 
     _getRedditFeedList() {
@@ -485,12 +535,6 @@ class RSSDesklet extends Desklet.Desklet {
             .map(sub =>
                 `https://www.reddit.com/r/${sub}/${sort}.rss`
             );
-    }
-
-    _extractOver18(itemXML) {
-
-        return /<category[^>]+(?:term|label)=["'](?:over18|nsfw)["']/i
-            .test(itemXML);
     }
 
     _addLoop(name, interval, callback, seconds = false) {
@@ -558,10 +602,32 @@ class RSSDesklet extends Desklet.Desklet {
         // Refresh Feeds
         // ---------------------------------
 
+        const updateItem =
+            new PopupMenu.PopupIconMenuItem(
+                "Update All Feeds",
+                "view-refresh-symbolic",
+                St.IconType.SYMBOLIC
+            );
+
+        updateItem.connect("activate", () => {
+
+            Main.notify(
+                "Scrolling RSS, Reddit & Crypto Ticker",
+                "Updating Feeds..."
+            );
+
+            this._updateLastRefreshTime();
+
+            this._fetchCrypto();
+            this._fetchFeeds();
+        });
+
+        this._menu.addMenuItem(updateItem);
+
         const refreshItem =
             new PopupMenu.PopupIconMenuItem(
-                "Refresh All Feeds",
-                "view-refresh-symbolic",
+                "Remove & Refresh All Feeds",
+                "edit-delete",
                 St.IconType.SYMBOLIC
             );
 
@@ -569,13 +635,12 @@ class RSSDesklet extends Desklet.Desklet {
 
             Main.notify(
                 "Scrolling RSS, Reddit & Crypto Ticker",
-                "Refreshing Feeds..."
+                "Removing & Refreshing Feeds..."
             );
 
             this._updateLastRefreshTime();
 
-            this._fetchCrypto();
-            this._fetchFeeds();
+            this._rebuildFromScratch();
         });
 
         this._menu.addMenuItem(refreshItem);
@@ -706,9 +771,7 @@ class RSSDesklet extends Desklet.Desklet {
 
         this.tickerBox1.x_expand = false;
 
-        this.tickerBox1.set_x_align(
-            Clutter.ActorAlign.START
-        );
+        this._setCenter(this.tickerBox1);
     }
 
     _applyFadeStyle(r, g, b, bgOpacity) {
@@ -1017,22 +1080,23 @@ class RSSDesklet extends Desklet.Desklet {
         const color =
             isUp ? "#00dd66" : "#ff4444";
 
-        const cryptoRow = this._createBox({
-            vertical: false,
-            y_align: Clutter.ActorAlign.CENTER
+        const cryptoRow = this._createActor(St.BoxLayout, {
+            vertical: false
         });
+
+        this._setCenter(cryptoRow);
 
         const mainLabel = this._createLabel(
             `${coin.symbol} : ${coin.currencySymbol}${coin.price}`
         );
 
-        mainLabel.y_align = Clutter.ActorAlign.CENTER;
+        this._setCenter(mainLabel);
 
         cryptoRow.add_actor(mainLabel);
 
         const spacer = this._createSpacer();
 
-        spacer.y_align = Clutter.ActorAlign.CENTER;
+        this._setCenter(spacer);
 
         cryptoRow.add_actor(spacer);
 
@@ -1041,7 +1105,7 @@ class RSSDesklet extends Desklet.Desklet {
             color
         );
 
-        changeLabel.y_align = Clutter.ActorAlign.CENTER;
+        this._setCenter(changeLabel);
 
         cryptoRow.add_actor(changeLabel);
 
@@ -1081,7 +1145,7 @@ class RSSDesklet extends Desklet.Desklet {
 
         btn.style_class = "rss-news-button";
 
-        const row = this._createBox({
+        const row = this._createActor(St.BoxLayout, {
             vertical: false
         });
 
@@ -1089,7 +1153,15 @@ class RSSDesklet extends Desklet.Desklet {
         // FAVICON
         // =====================================
 
-        if (this.showFavicons && headline.domain) {
+        const isReddit =
+            headline.isReddit === true;
+
+        const showIcon =
+            isReddit
+                ? this.showRedditIcons
+                : this.showFavicons;
+
+        if (showIcon && headline.domain) {
 
             const icon = this._createFavicon(
                 headline.domain
@@ -1115,19 +1187,13 @@ class RSSDesklet extends Desklet.Desklet {
 
         // Save original style
         label._normalStyle = `
-            font-family: "${this.fontParts.family}";
-            font-size: ${this.fontParts.size}px;
-            font-weight: ${this.fontParts.weight};
-            font-style: ${this.fontParts.style};
+            ${this._getFontCSS()}
             color: ${this.fontColor};
         `;
 
         // Hover style
         label._hoverStyle = `
-            font-family: "${this.fontParts.family}";
-            font-size: ${this.fontParts.size}px;
-            font-weight: ${this.fontParts.weight};
-            font-style: ${this.fontParts.style};
+            ${this._getFontCSS()}
             text-decoration: underline;
             color: ${this.fontColor};
         `;
@@ -1217,44 +1283,6 @@ class RSSDesklet extends Desklet.Desklet {
         }
     }
 
-    _getCurrencySymbol(currency) {
-
-        const symbols = {
-            usd: "$",
-            aud: "A$",
-            cad: "C$",
-            eur: "€",
-            gbp: "£",
-            jpy: "¥",
-            cny: "¥",
-            inr: "₹",
-            krw: "₩",
-            rub: "₽",
-            chf: "CHF",
-            sek: "kr",
-            nok: "kr",
-            dkk: "kr",
-            nzd: "NZ$",
-            sgd: "S$",
-            hkd: "HK$",
-            brl: "R$",
-            mxn: "$",
-            zar: "R",
-            try: "₺",
-            aed: "د.إ",
-            pln: "zł",
-            thb: "฿",
-            idr: "Rp",
-            myr: "RM",
-            php: "₱",
-            vnd: "₫"
-        };
-
-        currency = (currency || "usd").toLowerCase();
-
-        return symbols[currency] || currency.toUpperCase() + " ";
-    }
-
     _getFeedList() {
 
         let feeds = [];
@@ -1319,16 +1347,6 @@ class RSSDesklet extends Desklet.Desklet {
         return dir;
     }
 
-    _getDomain(url) {
-
-        let match =
-            url.match(/^https?:\/\/([^\/]+)/i);
-
-        return match
-            ? match[1].replace(/^www\./, "")
-            : null;
-    }
-
     _getFaviconPath(domain) {
 
         return GLib.build_filenamev([
@@ -1357,6 +1375,7 @@ class RSSDesklet extends Desklet.Desklet {
 
     _reload() {
 
+        this.lastHeadlines = [];
         this._fetchFeeds();
     }
 
@@ -1372,28 +1391,20 @@ class RSSDesklet extends Desklet.Desklet {
 
         if (!feeds.length) {
 
-            // Crypto-only mode
             if (this.showCrypto) {
+
+                this._hideEmptyMessage();
 
                 this.lastHeadlines = [];
 
                 this._rebuildTickerActors([]);
 
-                return;
+            } else {
+
+                this._showEmptyMessage(
+                    "No Feeds Configured"
+                );
             }
-
-            // Nothing enabled
-            this.text = "No feeds configured";
-
-            this._destroyChildrenSafely(
-                this.tickerBox1
-            );
-
-            let label = new St.Label({
-                text: this.text
-            });
-
-            this.tickerBox1.add_actor(label);
 
             return;
         }
@@ -1423,6 +1434,9 @@ class RSSDesklet extends Desklet.Desklet {
 
                         global.log("Using cached RSS headlines");
 
+                        this.usingCachedData = true;
+                        this._updateCacheIndicator();
+
                         this._rebuildTickerActors(this.lastHeadlines);
 
                     } else {
@@ -1437,7 +1451,15 @@ class RSSDesklet extends Desklet.Desklet {
                 try {
 
                     let items =
-                        this._parseRSS(stdout, feedURL);
+                        this.feedParser.parse(
+                            stdout,
+                            feedURL,
+                            {
+                                allowNSFW: this.AllowNSFW,
+                                showSource: this.showSource,
+                                showRedditSource: this.showRedditSource
+                            }
+                        );
 
                     allHeadlines =
                         allHeadlines.concat(items);
@@ -1456,258 +1478,14 @@ class RSSDesklet extends Desklet.Desklet {
         });
     }
 
-    _parseRSS(xml, feedURL) {
-
-        const items = [];
-
-        const source =
-            this._extractSource(feedURL);
-
-        const rssItems =
-            this._extractRSSItems(xml);
-
-        for (const itemXML of rssItems) {
-
-            const title =
-                this._extractTitle(itemXML);
-
-            const link =
-                this._extractLink(itemXML);
-
-            if (!title || !link)
-                continue;
-
-            const cleanTitle =
-                this._cleanText(title);
-
-            const cleanLink =
-                this._cleanText(link)
-                    .replace(/\s+/g, "");
-
-            const isNSFW =
-                this._extractOver18(itemXML);
-
-            if (isNSFW && !this.AllowNSFW)
-                continue;
-
-            const isReddit =
-                /reddit\.com/i.test(feedURL);
-
-            const displayTitle =
-                this._formatHeadline(
-                    source,
-                    cleanTitle,
-                    isReddit
-                );
-
-            const domain =
-                this._getDomain(cleanLink);
-
-            if (this.showFavicons)
-                this._fetchFavicon(domain);
-
-            items.push({
-                title: displayTitle,
-                link: cleanLink,
-                domain
-            });
-        }
-
-        const isReddit =
-            /reddit\.com/i.test(feedURL);
-
-        if (isReddit) {
-
-            const max =
-                this.maxRedditHeadlines || 10;
-
-            return items.slice(0, max);
-        }
-
-        return items;
-    }
-
-    _extractRSSItems(xml) {
-
-        // =====================================
-        // STANDARD RSS
-        // =====================================
-
-        let rss =
-            xml.match(
-                /<item[\s\S]*?<\/item>/gim
-            );
-
-        if (rss && rss.length > 0)
-            return rss;
-
-        // =====================================
-        // ATOM (Reddit)
-        // =====================================
-
-        let atom =
-            xml.match(
-                /<entry[\s\S]*?<\/entry>/gim
-            );
-
-        return atom || [];
-    }
-
-    _extractTitle(itemXML) {
-
-        // RSS
-        let match =
-            itemXML.match(
-                /<title>([\s\S]*?)<\/title>/i
-            );
-
-        // ATOM (Reddit)
-        if (!match) {
-
-            match =
-                itemXML.match(
-                    /<title[^>]*>([\s\S]*?)<\/title>/i
-                );
-        }
-
-        return match
-            ? match[1]
-            : null;
-
-    }
-
-    _extractLink(itemXML) {
-
-        // =====================================
-        // RSS LINK
-        // =====================================
-
-        let match =
-            itemXML.match(
-                /<link>([\s\S]*?)<\/link>/i
-            );
-
-        if (match)
-            return match[1];
-
-        // =====================================
-        // ATOM LINK
-        // =====================================
-
-        match =
-            itemXML.match(
-                /<link[^>]+href=["']([^"']+)["']/i
-            );
-
-        if (match)
-            return match[1];
-
-        // =====================================
-        // GUID FALLBACK
-        // =====================================
-
-        match =
-            itemXML.match(
-                /<guid[^>]*>([\s\S]*?)<\/guid>/i
-            );
-
-        return match
-            ? match[1]
-            : null;
-
-    }
-
-    _cleanText(text) {
-
-        if (!text)
-            return "";
-
-        text = text
-            .replace(/<!\[CDATA\[/g, "")
-            .replace(/\]\]>/g, "")
-            .replace(/<[^>]*>/g, "");
-
-        text = this._decodeEntities(text);
-
-        return text
-            .replace(/\s+/g, " ")
-            .trim();
-    }
-
-    _decodeEntities(text) {
-
-        if (!text)
-            return "";
-
-        try {
-
-            const label = new St.Label();
-
-            // Wrap in harmless span
-            label.clutter_text.set_markup(
-                `<span>${text}</span>`
-            );
-
-            return label.clutter_text.text;
-
-        } catch (e) {
-
-            return text
-                .replace(/&amp;/g, "&")
-                .replace(/&quot;/g, "\"")
-                .replace(/&#39;/g, "'")
-                .replace(/&#x27;/gi, "'")
-                .replace(/&lt;/g, "<")
-                .replace(/&gt;/g, ">");
-        }
-    }
-
-    _formatHeadline(source, title, isReddit = false) {
-
-        // =====================================
-        // REDDIT
-        // =====================================
-
-        if (isReddit) {
-
-            if (!this.showRedditSource)
-                return title;
-        }
-
-        // =====================================
-        // RSS
-        // =====================================
-
-        else {
-
-            if (!this.showSource)
-                return title;
-        }
-
-        return `【${source}】 ${title}`;
-    }
-
-    _extractSource(url) {
-
-        // Reddit special handling
-        const reddit =
-            url.match(/reddit\.com\/r\/([^\/]+)/i);
-
-        if (reddit)
-            return `r/${reddit[1]}`;
-
-        let m =
-            url.match(/https?:\/\/(?:www\.)?([^\/]+)/i);
-
-        if (!m)
-            return "RSS";
-
-        return m[1]
-            .replace(/\.(com|org|net)$/i, "")
-            .toUpperCase();
-    }
-
     _finalizeHeadlines(headlines) {
+
+        if (headlines.length > 0 || this.showCrypto) {
+            this._hideEmptyMessage();
+        }
+
+        this.usingCachedData = false;
+        this._updateCacheIndicator();
 
         let seen = {};
 
@@ -1740,24 +1518,81 @@ class RSSDesklet extends Desklet.Desklet {
 
         if (!headlines.length) {
 
-            this.text = "No headlines";
+        if (this.showCrypto &&
+            this.cryptoData &&
+            this.cryptoData.length > 0) {
 
-            this._destroyChildrenSafely(this.tickerBox1);
+            this._hideEmptyMessage();
 
-            this.tickerBox1.add_actor(
-                new St.Label({
-                    text: "No headlines"
-                })
+            this.lastHeadlines = [];
+
+            this._rebuildTickerActors([]);
+
+            return;
+        }
+
+        this._showEmptyMessage(
+            "No Headlines Available"
+        );
+
+        return;
+    }
+
+        const existing = this.lastHeadlines || [];
+
+        const existingLinks = new Set(
+            existing.map(h => h.link)
+        );
+
+        const newItems = headlines.filter(
+            h => !existingLinks.has(h.link)
+        );
+
+        if (newItems.length === 0) {
+
+            global.log(
+                "No new headlines found"
             );
 
             return;
         }
 
-        this.lastHeadlines = headlines;
+        this.lastHeadlines =
+            existing.concat(newItems);
 
-        this._rebuildTickerActors(headlines);
+        const maxBuffer = 100;
+
+        if (this.lastHeadlines.length > maxBuffer) {
+
+            this.lastHeadlines =
+                this.lastHeadlines.slice(-maxBuffer);
+        }
+
+        this._rebuildTickerActors(
+            this.lastHeadlines
+        );
 
         this._saveCache();
+    }
+
+    _rebuildFromScratch() {
+
+        // Stop ticker to avoid mid-scroll mutation
+        this._stopTicker();
+
+        // Reset state that affects layout/scroll
+        this.offset = 0;
+        this.pendingHeadlines = null;
+        this.lastHeadlines = [];
+
+        // Clear UI safely
+        this._destroyChildrenSafely(this.tickerBox1);
+
+        // Re-fetch everything fresh
+        this._fetchFeeds();
+
+        // Restart ticker after rebuild
+        this._startTicker();
     }
 
     // ==================================================
@@ -1773,350 +1608,27 @@ class RSSDesklet extends Desklet.Desklet {
             return;
         }
 
-        let rawSymbols =
-            this.cryptoSymbols || "bitcoin\nethereum";
-
-        let userTokens = rawSymbols
+        const symbols =
+            (this.cryptoSymbols || "bitcoin\nethereum")
             .split("\n")
-            .map(s => s.trim().toLowerCase())
-            .filter(s => s.length > 0);
+            .map(s => s.trim())
+            .filter(Boolean);
 
-        let currency =
+        const currency =
             (this.cryptoCurrency || "usd").toLowerCase();
 
-        // ==================================================
-        // TRY CACHE FIRST
-        // ==================================================
+        this.cryptoService.fetch(symbols, currency, cryptoData => {
 
-        let cachedCoinList =
-            this._loadCoinListCache();
-
-        if (cachedCoinList) {
-
-            this._processCoinList(
-                cachedCoinList,
-                userTokens,
-                currency
-            );
-
-            return;
-        }
-
-        // ==================================================
-        // FETCH COIN LIST
-        // ==================================================
-
-        let coinListURL =
-            "https://api.coingecko.com/api/v3/coins/list";
-
-        this._httpGet(coinListURL, stdout => {
-
-            if (!stdout)
-                return;
-
-            try {
-
-                let coinList =
-                    JSON.parse(stdout);
-
-                this._saveCoinListCache(
-                    coinList
-                );
-
-                this._processCoinList(
-                    coinList,
-                    userTokens,
-                    currency
-                );
-
-            } catch (e) {
-
-                global.logError(
-                    "CoinGecko validation error: " + e
-                );
-            }
-        });
-    }
-
-    _processCoinList(
-        coinList,
-        userTokens,
-        currency
-    ) {
-
-        // --------------------------------------------------
-        // BUILD LOOKUP MAPS
-        // --------------------------------------------------
-
-        let idMap = {};
-        let symbolMap = {};
-        let nameMap = {};
-        let coinById = {};
-
-        coinList.forEach(coin => {
-
-            if (!coin.id)
-                return;
-
-            let id =
-                coin.id.toLowerCase();
-
-            idMap[id] = coin.id;
-
-            coinById[coin.id] = coin;
-
-            if (coin.symbol) {
-
-                let symbol =
-                    coin.symbol.toLowerCase();
-
-                if (!symbolMap[symbol]) {
-
-                    symbolMap[symbol] =
-                        coin.id;
-                }
-            }
-
-            if (coin.name) {
-
-                nameMap[
-                    coin.name.toLowerCase()
-                ] = coin.id;
-            }
-        });
-
-        // --------------------------------------------------
-        // RESOLVE TOKENS
-        // --------------------------------------------------
-
-        let validIDs = [];
-        let invalidTokens = [];
-
-        this.cryptoSymbolMap = {};
-
-        userTokens.forEach(token => {
-
-            let resolved = null;
-
-            // Exact ID
-            if (idMap[token]) {
-
-                resolved = idMap[token];
-            }
-
-            // Symbol
-            else if (symbolMap[token]) {
-
-                resolved = symbolMap[token];
-            }
-
-            // Name
-            else if (nameMap[token]) {
-
-                resolved = nameMap[token];
-            }
-
-            if (resolved) {
-
-                if (!validIDs.includes(resolved)) {
-
-                    validIDs.push(resolved);
-
-                    let symbol =
-                        token.toUpperCase();
-
-                    let coin =
-                        coinById[resolved];
-
-                    if (
-                        coin &&
-                        coin.symbol
-                    ) {
-
-                        symbol =
-                            coin.symbol.toUpperCase();
-                    }
-
-                    this.cryptoSymbolMap[
-                        resolved
-                    ] = symbol;
-                }
-
-            } else {
-
-                invalidTokens.push(token);
-            }
-        });
-
-        // --------------------------------------------------
-        // INVALID TOKENS
-        // --------------------------------------------------
-
-        if (invalidTokens.length > 0) {
-
-            global.log(
-                "Invalid Crypto Tokens: " +
-                invalidTokens.join(", ")
-            );
-        }
-
-        // --------------------------------------------------
-        // FETCH PRICES
-        // --------------------------------------------------
-
-        let url =
-            "https://api.coingecko.com/api/v3/simple/price?ids=" +
-            encodeURIComponent(
-                validIDs.join(",")
-            ) +
-            "&vs_currencies=" +
-            encodeURIComponent(currency) +
-            "&include_24hr_change=true";
-
-            this._httpGet(url, priceStdout => {
-
-                if (!priceStdout) {
-
-                    if (this.cryptoData &&
-                        this.cryptoData.length > 0) {
-
-                        global.log("Using cached crypto data");
-
-                        this._fetchFeeds();
-                    }
-
+                if (!cryptoData)
                     return;
-                }
 
-                try {
+                this.cryptoData = cryptoData;
 
-                    let data =
-                        JSON.parse(priceStdout);
-
-                    this._parseCrypto(
-                        data,
-                        currency
-                    );
-
-                } catch (e) {
-
-                    global.logError(
-                        "Crypto parse error: " + e
-                    );
-                }
+                this._rebuildTickerActors(
+                    this.lastHeadlines || []
+                );
             }
         );
-    }
-
-    _parseCrypto(data, currency) {
-
-        if (this._destroyed ||
-            !this.tickerBox1 ||
-            !this.tickerContainer)
-            return;
-
-        let chunks = [];
-
-        for (let key in data) {
-
-            let item = data[key];
-
-            if (
-                !item ||
-                typeof item !== "object" ||
-                !(currency in item)
-            ) {
-                continue;
-            }
-
-            let price = item[currency];
-
-            let changeKey =
-                currency + "_24h_change";
-
-            let change =
-                item[changeKey] || 0;
-
-            // --------------------------------------------------
-            // SYMBOL
-            // --------------------------------------------------
-
-            let symbol =
-                this.cryptoSymbolMap[key] ||
-                key.toUpperCase();
-
-            // --------------------------------------------------
-            // PRICE FORMAT
-            // --------------------------------------------------
-
-            let formattedPrice;
-
-            if (price >= 1000) {
-
-                formattedPrice =
-                    parseFloat(price).toLocaleString(
-                        undefined,
-                        {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 2
-                        }
-                    );
-
-            } else if (price >= 1) {
-
-                formattedPrice =
-                    parseFloat(price).toFixed(2);
-
-            } else {
-
-                formattedPrice =
-                    parseFloat(price).toFixed(6);
-            }
-
-            // --------------------------------------------------
-            // CHANGE FORMAT
-            // --------------------------------------------------
-
-            let arrow =
-                change >= 0 ? "▲" : "▼";
-
-            let changeText =
-                Math.abs(change).toFixed(2);
-
-            // --------------------------------------------------
-            // FINAL STRING
-            // --------------------------------------------------
-
-            chunks.push({
-                symbol: symbol,
-                price: formattedPrice,
-                change: change,
-                arrow: arrow,
-                changeText: changeText,
-                currencySymbol: this._getCurrencySymbol(currency)
-            });
-        }
-
-        // --------------------------------------------------
-        // NO VALID DATA
-        // --------------------------------------------------
-
-        if (chunks.length === 0) {
-
-            global.log(
-                "Crypto update ignored: no valid tokens/currency"
-            );
-
-            return;
-        }
-
-        // --------------------------------------------------
-        // BUILD TICKER
-        // --------------------------------------------------
-
-        this.cryptoData = chunks;
-
-        this._fetchFeeds();
     }
 
     _startCryptoRefresh() {
@@ -2229,12 +1741,8 @@ class RSSDesklet extends Desklet.Desklet {
                 if (this.isPaused)
                     return true;
 
-                if (
-                    !this.tickerBox1 ||
-                    !this.tickerClone
-                ) {
+                if (this._destroyed || !this.tickerBox1 || !this.tickerClone)
                     return true;
-                }
 
                 const width1 =
                     this.tickerWidth || 0;
@@ -2318,62 +1826,18 @@ class RSSDesklet extends Desklet.Desklet {
     // CACHE
     // ==================================================
 
-    _getCoinListCacheFile() {
-
-        return GLib.build_filenamev([
-            GLib.get_user_cache_dir(),
-            "rss-desklet-coins.json"
-        ]);
-    }
-
-    _saveCoinListCache(data) {
-
-        this._writeJSON(
-            this._getCoinListCacheFile(),
-            {
-                timestamp: Date.now(),
-                data
-            }
-        );
-    }
-
-    _loadCoinListCache() {
-
-        const cache = this._readJSON(
-            this._getCoinListCacheFile()
-        );
-
-        if (!cache?.timestamp || !cache?.data)
-            return null;
-
-        const maxAge = 24 * 60 * 60 * 1000;
-
-        const age =
-            Date.now() - cache.timestamp;
-
-        if (age > maxAge)
-            return null;
-
-        return cache.data;
-    }
-
     _saveCache() {
 
-        this._writeJSON(
-            this._getCacheFile(),
-            {
-                headlines: this.lastHeadlines || [],
-                cryptoData: this.cryptoData || [],
-                timestamp: Date.now()
-            }
+        this.cache.saveRSSCache(
+            this.lastHeadlines || [],
+            this.cryptoData || []
         );
     }
 
     _loadCache() {
 
-        const cache = this._readJSON(
-            this._getCacheFile()
-        );
+        const cache =
+            this.cache.loadRSSCache();
 
         if (!cache)
             return false;
@@ -2391,14 +1855,6 @@ class RSSDesklet extends Desklet.Desklet {
         );
 
         return true;
-    }
-
-    _getCacheFile() {
-
-        return GLib.build_filenamev([
-            GLib.get_user_cache_dir(),
-            "rss-desklet-cache.json"
-        ]);
     }
 
     // ==================================================
@@ -2421,9 +1877,38 @@ class RSSDesklet extends Desklet.Desklet {
         this.lastHeadlines = null;
 
         this.tickerClone?.destroy();
+        this.tickerClone = null;
+
         this.leftFade?.destroy();
+        this.leftFade = null;
         this.rightFade?.destroy();
+        this.rightFade = null;
     
+    }
+
+    _destroyActorRecursive(actor) {
+
+        if (!actor)
+            return;
+
+        // disconnect signals
+        if (actor._signalIds) {
+            actor._signalIds.forEach(id => {
+                try { actor.disconnect(id); } catch (e) {}
+            });
+            actor._signalIds = null;
+        }
+
+        // destroy children first (if container)
+        if (actor.get_children) {
+            actor.get_children().forEach(child =>
+                this._destroyActorRecursive(child)
+            );
+        }
+
+        try {
+            actor.destroy();
+        } catch (e) {}
     }
 
     _destroyChildrenSafely(container) {
@@ -2431,23 +1916,9 @@ class RSSDesklet extends Desklet.Desklet {
         if (!container)
             return;
 
-        let children = container.get_children();
-
-        children.forEach(actor => {
-
-            if (actor._signalIds) {
-
-                actor._signalIds.forEach(id => {
-                    try {
-                        actor.disconnect(id);
-                    } catch (e) {}
-                });
-
-                actor._signalIds = null;
-            }
-
-            actor.destroy();
-        });
+        container.get_children().forEach(child =>
+            this._destroyActorRecursive(child)
+        );
     }
 
 };

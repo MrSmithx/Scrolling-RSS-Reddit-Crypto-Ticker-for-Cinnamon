@@ -84,6 +84,7 @@
         "maxRedditHeadlines",
         "redditRefreshInterval",
         "showRedditSource",
+        "showRedditIcons",
         "AllowNSFW",
         "redditSort"
       ]
@@ -172,10 +173,10 @@
     "deskletHeight": {
         "type": "spinbutton",
         "default": 10,
-        "min": 10,
+        "min": 5,
         "max": 50,
         "step": 1,
-        "description": "Ticker Height Buffer [ px ]"
+        "description": "Ticker Height [ px in addition to Font Size]"
     },
 
     "maxHeadlines": {
@@ -298,7 +299,7 @@
         "min": 5,
         "max": 100,
         "step": 1,
-        "description": "Maximum Posts to Display [ 5 - 20 ]"
+        "description": "Maximum Reddit Post to Display [ 5 - 20 ]"
     },
 
     "redditRefreshInterval": {
@@ -313,7 +314,13 @@
     "showRedditSource": {
         "type": "checkbox",
         "default": false,
-        "description": "Show Post Source"
+        "description": "Show Subreddit Source"
+    },
+
+    "showRedditIcons": {
+        "type": "switch",
+        "default": true,
+        "description": "Show Reddit Icon"
     },
 
     "AllowNSFW": {

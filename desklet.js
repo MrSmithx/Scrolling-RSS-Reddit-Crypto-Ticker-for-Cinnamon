@@ -65,7 +65,7 @@ class RSSDesklet extends Desklet.Desklet {
 
         const settingGroups = {
             _reload: [
-                "maxHeadlines",
+                "maxRSSHeadlines",
                 "showSource",
                 "randomise",
                 "showFavicons",
@@ -151,6 +151,12 @@ class RSSDesklet extends Desklet.Desklet {
         this.cryptoSymbolMap = {};
 
         this.fadeWidth = 100;
+
+        this._fetchingFeeds = false;
+
+        this.maxRSSHeadlines = this.maxRSSHeadlines || 10;
+
+        this.maxRedditHeadlines = this.maxRedditHeadlines || 10;
 
     }
 
@@ -361,6 +367,29 @@ class RSSDesklet extends Desklet.Desklet {
         this.lastRefreshMenuItem.label.text =
             "Last Refresh: " +
             this.lastRefreshTime.toLocaleString();
+    }
+
+    _updateFeedStatsMenu() {
+
+        const rssSources =
+            this.feedURLs
+                ? this.feedURLs.split("\n").filter(Boolean).length
+                : 0;
+
+        const redditSources =
+            this.redditFeeds
+                ? this.redditFeeds.split("\n").filter(Boolean).length
+                : 0;
+
+        const rssArticles =
+            (this.lastHeadlines || []).filter(h => !h.isReddit).length;
+
+        const redditArticles =
+            (this.lastHeadlines || []).filter(h => h.isReddit).length;
+
+        this.feedStatsMenuItem.label.text =
+            `Sources : RSS : ${rssSources} - Reddit : ${redditSources}` +
+            `\nArticles : RSS : ${rssArticles} - Reddit : ${redditArticles}`;
     }
 
     _setCenter(actor) {
@@ -616,9 +645,8 @@ class RSSDesklet extends Desklet.Desklet {
                 "Updating Feeds..."
             );
 
-            this._updateLastRefreshTime();
-
             this._fetchCrypto();
+
             this._fetchFeeds();
         });
 
@@ -638,10 +666,10 @@ class RSSDesklet extends Desklet.Desklet {
                 "Removing & Refreshing Feeds..."
             );
 
-            this._updateLastRefreshTime();
-
             this._rebuildFromScratch();
         });
+
+        this._updateLastRefreshTime();
 
         this._menu.addMenuItem(refreshItem);
 
@@ -671,6 +699,25 @@ class RSSDesklet extends Desklet.Desklet {
         this._menu.addMenuItem(
             this.lastRefreshMenuItem
         );
+
+        // ---------------------------------
+        // Feed Stats (Sources + Articles)
+        // ---------------------------------
+
+        this.feedStatsMenuItem =
+            new PopupMenu.PopupMenuItem(
+                "Feeds: ..."
+            );
+
+        this.feedStatsMenuItem.setSensitive(false);
+
+        this.feedStatsMenuItem.label.set_style(`
+            color: white;
+        `);
+
+        this._menu.addMenuItem(this.feedStatsMenuItem);
+
+        this._updateFeedStatsMenu(this.lastHeadlines || []);
     }
 
     // ==================================================
@@ -1010,18 +1057,30 @@ class RSSDesklet extends Desklet.Desklet {
         });
     }
 
-    _rebuildTickerActors(headlines) {
+_rebuildTickerActors(headlines) {
 
-        this._buildTickerContent(headlines, this.tickerBox1);
+    const oldOffset =
+        this.offset || 0;
 
-        this.tickerWidth =
-            this.tickerBox1.get_preferred_width(-1)[1];
+    this._buildTickerContent(
+        headlines,
+        this.tickerBox1
+    );
 
-        this.tickerBox1.queue_relayout();
+    this.tickerWidth =
+        this.tickerBox1.get_preferred_width(-1)[1];
 
-        if (this.tickerClone)
-            this.tickerClone.queue_relayout();
+    if (this.tickerWidth > 0) {
+
+        this.offset =
+            oldOffset % this.tickerWidth;
     }
+
+    this.tickerBox1.queue_relayout();
+
+    if (this.tickerClone)
+        this.tickerClone.queue_relayout();
+}
 
     _buildTickerContent(headlines, targetBox) {
 
@@ -1132,7 +1191,6 @@ class RSSDesklet extends Desklet.Desklet {
                 this._createSpacer("sep")
             );
         }
-
     }
 
     _createNewsButton(headline) {
@@ -1381,6 +1439,17 @@ class RSSDesklet extends Desklet.Desklet {
 
     _fetchFeeds() {
 
+        if (this._fetchingFeeds) {
+
+            global.log(
+                "Feed refresh already running, skipping"
+            );
+
+            return;
+        }
+
+        this._fetchingFeeds = true;
+
         this._updateLastRefreshTime();
 
         let feeds = this._getFeedList();
@@ -1390,6 +1459,8 @@ class RSSDesklet extends Desklet.Desklet {
         // =====================================
 
         if (!feeds.length) {
+
+            this._fetchingFeeds = false;
 
             if (this.showCrypto) {
 
@@ -1411,7 +1482,8 @@ class RSSDesklet extends Desklet.Desklet {
 
         let pending = feeds.length;
 
-        let allHeadlines = [];
+        let rssHeadlines = [];
+        let redditHeadlines = [];
 
         feeds.forEach(feedURL => {
 
@@ -1424,6 +1496,8 @@ class RSSDesklet extends Desklet.Desklet {
                 // If ALL feeds failed and we already have cache,
                 // keep the cached headlines instead of clearing UI
                 if (pending <= 0) {
+
+                    this._fetchingFeeds = false;
 
                     if (allHeadlines.length > 0) {
 
@@ -1450,19 +1524,18 @@ class RSSDesklet extends Desklet.Desklet {
 
                 try {
 
-                    let items =
-                        this.feedParser.parse(
-                            stdout,
-                            feedURL,
-                            {
-                                allowNSFW: this.AllowNSFW,
-                                showSource: this.showSource,
-                                showRedditSource: this.showRedditSource
-                            }
-                        );
+                let items = this.feedParser.parse(stdout, feedURL, {
+                    allowNSFW: this.AllowNSFW,
+                    showSource: this.showSource,
+                    showRedditSource: this.showRedditSource
+                });
 
-                    allHeadlines =
-                        allHeadlines.concat(items);
+                // classify
+                if (items.length > 0 && items[0].isReddit) {
+                    redditHeadlines = redditHeadlines.concat(items);
+                } else {
+                    rssHeadlines = rssHeadlines.concat(items);
+                }
 
                 } catch (e) {
 
@@ -1471,107 +1544,81 @@ class RSSDesklet extends Desklet.Desklet {
 
                 pending--;
 
-                if (pending <= 0)
-                    this._finalizeHeadlines(allHeadlines);
-            });
+                if (pending <= 0) {
 
+                    this._fetchingFeeds = false;
+
+                    const allHeadlines =
+                        rssHeadlines.concat(redditHeadlines);
+
+                    this._finalizeHeadlines(allHeadlines);
+                }
+            });
         });
     }
 
-    _finalizeHeadlines(headlines) {
+    _finalizeHeadlines(incomingHeadlines) {
 
-        if (headlines.length > 0 || this.showCrypto) {
+        this._fetchingFeeds = false;
+
+        // -----------------------------
+        // split by type (from incoming)
+        // -----------------------------
+        let rssHeadlines = incomingHeadlines.filter(h => !h.isReddit);
+        let redditHeadlines = incomingHeadlines.filter(h => h.isReddit);
+
+        // -----------------------------
+        // apply separate limits
+        // -----------------------------
+        rssHeadlines =
+            rssHeadlines.slice(0, this.maxRSSHeadlines || 10);
+
+        redditHeadlines =
+            redditHeadlines.slice(0, this.maxRedditHeadlines || 10);
+
+        // -----------------------------
+        // merge FINAL result
+        // -----------------------------
+        let finalHeadlines =
+            rssHeadlines.concat(redditHeadlines);
+
+        // -----------------------------
+        // empty handling
+        // -----------------------------
+        if (finalHeadlines.length > 0 || this.showCrypto) {
             this._hideEmptyMessage();
         }
 
         this.usingCachedData = false;
         this._updateCacheIndicator();
 
+        // -----------------------------
+        // deduplicate
+        // -----------------------------
         let seen = {};
-
-        headlines = headlines.filter(h => {
-
-            if (seen[h.link])
-                return false;
-
+        finalHeadlines = finalHeadlines.filter(h => {
+            if (seen[h.link]) return false;
             seen[h.link] = true;
-
             return true;
         });
 
+        // -----------------------------
+        // randomize
+        // -----------------------------
         if (this.randomise) {
-
-            for (let i = headlines.length - 1; i > 0; i--) {
-
+            for (let i = finalHeadlines.length - 1; i > 0; i--) {
                 let j = Math.floor(Math.random() * (i + 1));
-
-                [headlines[i], headlines[j]] = [
-                    headlines[j],
-                    headlines[i]
-                ];
+                [finalHeadlines[i], finalHeadlines[j]] =
+                    [finalHeadlines[j], finalHeadlines[i]];
             }
         }
 
-        let max = this.maxHeadlines || 20;
+        // -----------------------------
+        // update buffer (clean version)
+        // -----------------------------
+        this.lastHeadlines = finalHeadlines;
 
-        headlines = headlines.slice(0, max);
-
-        if (!headlines.length) {
-
-        if (this.showCrypto &&
-            this.cryptoData &&
-            this.cryptoData.length > 0) {
-
-            this._hideEmptyMessage();
-
-            this.lastHeadlines = [];
-
-            this._rebuildTickerActors([]);
-
-            return;
-        }
-
-        this._showEmptyMessage(
-            "No Headlines Available"
-        );
-
-        return;
-    }
-
-        const existing = this.lastHeadlines || [];
-
-        const existingLinks = new Set(
-            existing.map(h => h.link)
-        );
-
-        const newItems = headlines.filter(
-            h => !existingLinks.has(h.link)
-        );
-
-        if (newItems.length === 0) {
-
-            global.log(
-                "No new headlines found"
-            );
-
-            return;
-        }
-
-        this.lastHeadlines =
-            existing.concat(newItems);
-
-        const maxBuffer = 100;
-
-        if (this.lastHeadlines.length > maxBuffer) {
-
-            this.lastHeadlines =
-                this.lastHeadlines.slice(-maxBuffer);
-        }
-
-        this._rebuildTickerActors(
-            this.lastHeadlines
-        );
-
+        this._rebuildTickerActors(this.lastHeadlines);
         this._saveCache();
     }
 
@@ -1849,6 +1896,8 @@ class RSSDesklet extends Desklet.Desklet {
         if (Array.isArray(cache.cryptoData)) {
             this.cryptoData = cache.cryptoData;
         }
+
+        this._updateFeedStatsMenu(this.lastHeadlines || []);
 
         this._rebuildTickerActors(
             this.lastHeadlines || []

@@ -9,6 +9,8 @@ A highly configurable Cinnamon Desklet that displays a continuously scrolling ti
 The desklet combines multiple content sources into a smooth horizontal ticker with optional fade effects, favicons, caching, custom styling, and automatic refresh scheduling.
 
 ---
+![screenshot](ScreenShots/rssTicker.png)
+---
 
 ## Features
 

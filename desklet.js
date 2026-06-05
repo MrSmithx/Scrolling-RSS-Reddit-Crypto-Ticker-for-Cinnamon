@@ -108,7 +108,7 @@ class RSSDesklet extends Desklet.Desklet {
 
         this._bindSetting("cryptoSymbols");
         this._bindSetting("cryptoCurrency");
-        this._bindSetting("feedURLs");
+        this._bindSetting("feedURLs")
         this._bindSetting("redditFeeds");
 
     }
@@ -407,10 +407,10 @@ class RSSDesklet extends Desklet.Desklet {
             String(str).padEnd(len);
 
         this.feedStatsMenuItem.label.text =
-            `${pad("Sources", 10)} RSS ${pad(rssSources, 5)}  Reddit ${redditSources}\n` +
-            `${pad("Retrieved", 10)} RSS ${pad(stats.rssRetrieved, 5)}  Reddit ${stats.redditRetrieved}\n` +
-            `${pad("Limited", 10)} RSS ${pad(stats.rssAfterLimit, 5)}  Reddit ${stats.redditAfterLimit}\n` +
-            `${pad("Displayed", 10)} RSS ${pad(stats.rssDisplayed, 5)}  Reddit ${stats.redditDisplayed}`;
+            `${pad("Sources", 12)} RSS ${pad(rssSources, 5)}  Reddit ${redditSources}\n` +
+            `${pad("Retrieved", 12)} RSS ${pad(stats.rssRetrieved, 5)}  Reddit ${stats.redditRetrieved}\n` +
+            `${pad("Limited", 12)} RSS ${pad(stats.rssAfterLimit, 5)}  Reddit ${stats.redditAfterLimit}\n` +
+            `${pad("Displayed", 12)} RSS ${pad(stats.rssDisplayed, 5)}  Reddit ${stats.redditDisplayed}`;
     }
 
     _setCenter(actor) {
@@ -687,7 +687,10 @@ class RSSDesklet extends Desklet.Desklet {
                 "Removing & Refreshing Feeds..."
             );
 
-            this._rebuildFromScratch();
+            Mainloop.idle_add(() => {
+                this._rebuildFromScratch();
+                return false;
+            });
         });
 
         this._updateLastRefreshTime();
@@ -1078,30 +1081,30 @@ class RSSDesklet extends Desklet.Desklet {
         });
     }
 
-_rebuildTickerActors(headlines) {
+    _rebuildTickerActors(headlines) {
 
-    const oldOffset =
-        this.offset || 0;
+        const oldOffset =
+            this.offset || 0;
 
-    this._buildTickerContent(
-        headlines,
-        this.tickerBox1
-    );
+        this._buildTickerContent(
+            headlines,
+            this.tickerBox1
+        );
 
-    this.tickerWidth =
-        this.tickerBox1.get_preferred_width(-1)[1];
+        this.tickerWidth =
+            this.tickerBox1.get_preferred_width(-1)[1];
 
-    if (this.tickerWidth > 0) {
+        if (this.tickerWidth > 0) {
 
-        this.offset =
-            oldOffset % this.tickerWidth;
+            this.offset =
+                oldOffset % this.tickerWidth;
+        }
+
+        this.tickerBox1.queue_relayout();
+
+        if (this.tickerClone)
+            this.tickerClone.queue_relayout();
     }
-
-    this.tickerBox1.queue_relayout();
-
-    if (this.tickerClone)
-        this.tickerClone.queue_relayout();
-}
 
     _buildTickerContent(headlines, targetBox) {
 
@@ -1519,6 +1522,9 @@ _rebuildTickerActors(headlines) {
                 if (pending <= 0) {
 
                     this._fetchingFeeds = false;
+
+                    const allHeadlines =
+                        rssHeadlines.concat(redditHeadlines);
 
                     if (allHeadlines.length > 0) {
 

@@ -158,6 +158,14 @@ class RSSDesklet extends Desklet.Desklet {
 
         this.maxRedditHeadlines = this.maxRedditHeadlines || 10;
 
+        this.feedStats = {
+            rssRetrieved: 0,
+            redditRetrieved: 0,
+            rssAfterLimit: 0,
+            redditAfterLimit: 0,
+            rssDisplayed: 0,
+            redditDisplayed: 0
+        };
     }
 
     _initUI() {
@@ -364,6 +372,12 @@ class RSSDesklet extends Desklet.Desklet {
         if (!this.lastRefreshMenuItem)
             return;
 
+        this.lastRefreshMenuItem.label.set_style(`
+            color: white;
+            font-size: 9pt;
+            font-family: monospace;
+        `);
+
         this.lastRefreshMenuItem.label.text =
             "Last Refresh: " +
             this.lastRefreshTime.toLocaleString();
@@ -381,15 +395,22 @@ class RSSDesklet extends Desklet.Desklet {
                 ? this.redditFeeds.split("\n").filter(Boolean).length
                 : 0;
 
-        const rssArticles =
-            (this.lastHeadlines || []).filter(h => !h.isReddit).length;
+        const stats = this.feedStats || {};
 
-        const redditArticles =
-            (this.lastHeadlines || []).filter(h => h.isReddit).length;
+        this.feedStatsMenuItem.label.set_style(`
+            color: white;
+            font-size: 9pt;
+            font-family: monospace;
+        `);
+
+        const pad = (str, len) =>
+            String(str).padEnd(len);
 
         this.feedStatsMenuItem.label.text =
-            `Sources : RSS : ${rssSources} - Reddit : ${redditSources}` +
-            `\nArticles : RSS : ${rssArticles} - Reddit : ${redditArticles}`;
+            `${pad("Sources", 10)} RSS ${pad(rssSources, 5)}  Reddit ${redditSources}\n` +
+            `${pad("Retrieved", 10)} RSS ${pad(stats.rssRetrieved, 5)}  Reddit ${stats.redditRetrieved}\n` +
+            `${pad("Limited", 10)} RSS ${pad(stats.rssAfterLimit, 5)}  Reddit ${stats.redditAfterLimit}\n` +
+            `${pad("Displayed", 10)} RSS ${pad(stats.rssDisplayed, 5)}  Reddit ${stats.redditDisplayed}`;
     }
 
     _setCenter(actor) {
@@ -1564,8 +1585,17 @@ _rebuildTickerActors(headlines) {
         // -----------------------------
         // split by type (from incoming)
         // -----------------------------
-        let rssHeadlines = incomingHeadlines.filter(h => !h.isReddit);
-        let redditHeadlines = incomingHeadlines.filter(h => h.isReddit);
+        let rssHeadlines =
+            incomingHeadlines.filter(h => !h.isReddit);
+
+        let redditHeadlines =
+            incomingHeadlines.filter(h => h.isReddit);
+
+        this.feedStats.rssRetrieved =
+            rssHeadlines.length;
+
+        this.feedStats.redditRetrieved =
+            redditHeadlines.length;
 
         // -----------------------------
         // apply separate limits
@@ -1575,6 +1605,12 @@ _rebuildTickerActors(headlines) {
 
         redditHeadlines =
             redditHeadlines.slice(0, this.maxRedditHeadlines || 10);
+
+        this.feedStats.rssAfterLimit =
+            rssHeadlines.length;
+
+        this.feedStats.redditAfterLimit =
+            redditHeadlines.length;
 
         // -----------------------------
         // merge FINAL result
@@ -1602,6 +1638,12 @@ _rebuildTickerActors(headlines) {
             return true;
         });
 
+        this.feedStats.rssDisplayed =
+            finalHeadlines.filter(h => !h.isReddit).length;
+
+        this.feedStats.redditDisplayed =
+            finalHeadlines.filter(h => h.isReddit).length;
+
         // -----------------------------
         // randomize
         // -----------------------------
@@ -1619,6 +1661,7 @@ _rebuildTickerActors(headlines) {
         this.lastHeadlines = finalHeadlines;
 
         this._rebuildTickerActors(this.lastHeadlines);
+        this._updateFeedStatsMenu();
         this._saveCache();
     }
 

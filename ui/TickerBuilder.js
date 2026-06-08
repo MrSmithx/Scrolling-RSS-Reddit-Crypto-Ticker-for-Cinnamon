@@ -1,6 +1,4 @@
 const St = imports.gi.St;
-const Gio = imports.gi.Gio;
-const GLib = imports.gi.GLib;
 const Clutter = imports.gi.Clutter;
 const Util = imports.misc.util;
 
@@ -195,7 +193,7 @@ var TickerBuilder = class TickerBuilder {
         ) {
 
             const icon =
-                this._createFavicon(
+                d.faviconManager.createIcon(
                     headline.domain
                 );
 
@@ -268,52 +266,5 @@ var TickerBuilder = class TickerBuilder {
         );
 
         return btn;
-    }
-
-    _createFavicon(domain) {
-
-        const d = this.owner;
-
-        const iconPath =
-            d._getFaviconPath(domain);
-
-        if (
-            !GLib.file_test(
-                iconPath,
-                GLib.FileTest.EXISTS
-            )
-        ) {
-            return null;
-        }
-
-        try {
-
-            const file =
-                Gio.file_new_for_path(
-                    iconPath
-                );
-
-            const gicon =
-                Gio.FileIcon.new(file);
-
-            const icon =
-                new St.Icon({
-                    gicon,
-                    icon_size:
-                        d.fontParts.size
-                });
-
-            icon.set_style(`
-                margin-right: 10px;
-            `);
-
-            return icon;
-
-        } catch (e) {
-
-            global.logError(e);
-
-            return null;
-        }
     }
 };

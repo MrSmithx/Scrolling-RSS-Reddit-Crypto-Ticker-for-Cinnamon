@@ -23,6 +23,7 @@ imports.searchPath.unshift(`${DESKLET_DIR}/services`);
 imports.searchPath.unshift(`${DESKLET_DIR}/utils`);
 imports.searchPath.unshift(`${DESKLET_DIR}/ui`);
 imports.searchPath.unshift(`${DESKLET_DIR}/core`);
+imports.searchPath.unshift(`${DESKLET_DIR}/feeds`);
 
 const UIUtils = imports.UIUtils.UIUtils;
 const FeedParser = imports.FeedParser.FeedParser;
@@ -32,6 +33,7 @@ const TickerBuilder = imports.TickerBuilder.TickerBuilder;
 const NetworkManager = imports.NetworkManager.NetworkManager;
 const LoopManager = imports.LoopManager.LoopManager;
 const ContextMenu = imports.ContextMenu.ContextMenu;
+const FaviconManager = imports.FaviconManager.FaviconManager;
 
 class RSSDesklet extends Desklet.Desklet {
 
@@ -134,6 +136,8 @@ class RSSDesklet extends Desklet.Desklet {
         this.feedParser = new FeedParser();
 
         this.cache = new CacheService();
+
+        this.faviconManager = new FaviconManager(this);
 
         this.cryptoService = new CryptoService(
             this.network.get.bind(this.network),
@@ -899,44 +903,6 @@ class RSSDesklet extends Desklet.Desklet {
 
     }
 
-    _getFaviconDir() {
-
-        let dir = GLib.build_filenamev([
-            GLib.get_user_cache_dir(),
-            "rss-desklet-icons"
-        ]);
-
-        GLib.mkdir_with_parents(dir, 0o755);
-
-        return dir;
-    }
-
-    _getFaviconPath(domain) {
-
-        return GLib.build_filenamev([
-            this._getFaviconDir(),
-            domain + ".png"
-        ]);
-    }
-
-    _fetchFavicon(domain) {
-
-        if (!domain)
-            return;
-
-        let path =
-            this._getFaviconPath(domain);
-
-        // Already cached
-        if (GLib.file_test(path, GLib.FileTest.EXISTS))
-            return;
-
-        let url =
-            `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
-
-        this.network.download(url, path);
-    }
-
     _reload() {
 
         this.lastHeadlines = [];
@@ -1037,6 +1003,15 @@ class RSSDesklet extends Desklet.Desklet {
                     allowNSFW: this.AllowNSFW,
                     showSource: this.showSource,
                     showRedditSource: this.showRedditSource
+                });
+
+                items.forEach(item => {
+
+                    if (item.domain)
+                        this.faviconManager.fetch(
+                            item.domain
+                        );
+
                 });
 
                 // classify

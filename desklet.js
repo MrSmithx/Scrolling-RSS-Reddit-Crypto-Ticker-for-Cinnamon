@@ -19,13 +19,19 @@ const DESKLET_DIR =
         .deskletMeta["rssTicker@martyn"]
         .path;
 
-imports.searchPath.unshift(
-    `${DESKLET_DIR}/services`
-);
+imports.searchPath.unshift(`${DESKLET_DIR}/services`);
+imports.searchPath.unshift(`${DESKLET_DIR}/utils`);
+imports.searchPath.unshift(`${DESKLET_DIR}/ui`);
+imports.searchPath.unshift(`${DESKLET_DIR}/core`);
 
+const UIUtils = imports.UIUtils.UIUtils;
 const FeedParser = imports.FeedParser.FeedParser;
 const CacheService = imports.CacheService.CacheService;
 const CryptoService = imports.CryptoService.CryptoService;
+const TickerBuilder = imports.TickerBuilder.TickerBuilder;
+const NetworkManager = imports.NetworkManager.NetworkManager;
+const LoopManager = imports.LoopManager.LoopManager;
+const ContextMenu = imports.ContextMenu.ContextMenu;
 
 class RSSDesklet extends Desklet.Desklet {
 
@@ -35,9 +41,17 @@ class RSSDesklet extends Desklet.Desklet {
 
         this._menuManager = new PopupMenu.PopupMenuManager(this);
 
+        this.contextMenu = new ContextMenu(
+            this,
+            {
+                refresh: () => this._fetchFeeds(),
+                crypto: () => this._fetchCrypto(),
+                rebuild: () => this._rebuildFromScratch()
+            }
+        );
+
         this._initMetadata();
         this._initSettings(metadata, deskletId);
-        this._initNetworking();
         this._initState();
         this._initUI();
         this._initEvents();
@@ -113,28 +127,24 @@ class RSSDesklet extends Desklet.Desklet {
 
     }
 
-    _initNetworking() {
-
-        this._httpSession = new Soup.Session();
-
-        this._httpSession.user_agent = "Mozilla/5.0 (X11; Linux x86_64)";
-
-        this._httpSession.timeout = 10;
-
-        this._cancellable = new Gio.Cancellable();
-
-    }
-
     _initState() {
+
+        this.network = new NetworkManager();
 
         this.feedParser = new FeedParser();
 
         this.cache = new CacheService();
 
         this.cryptoService = new CryptoService(
-            this._httpGet.bind(this),
+            this.network.get.bind(this.network),
             this.cache
         );
+
+        this.loops = new LoopManager();
+
+        this.tickerBuilder = new TickerBuilder(this);
+
+        this.contextMenu = new ContextMenu(this);
 
         this.offset = 0;
 
@@ -172,13 +182,13 @@ class RSSDesklet extends Desklet.Desklet {
 
         this.actor.style_class = "rss-root";
 
-        this.container = this._createActor(St.BoxLayout, {
+        this.container = UIUtils.createActor(St.BoxLayout, {
             reactive: true,
             clip_to_allocation: true,
             vertical: false
         });
 
-        this.headlineButton = this._createActor(St.BoxLayout, {
+        this.headlineButton = UIUtils.createActor(St.BoxLayout, {
             reactive: true,
             track_hover: true,
             can_focus: true
@@ -196,22 +206,22 @@ class RSSDesklet extends Desklet.Desklet {
             `
         );
 
-        this._setCenter(this.cacheLabel);
+        UIUtils.setCenter(this.cacheLabel);
 
         this.cacheLabel.hide();
 
         this.container.add_actor(this.cacheLabel);
 
-        this.tickerViewport = this._createActor(St.Widget, {
+        this.tickerViewport = UIUtils.createActor(St.Widget, {
             layout_manager: new Clutter.BinLayout(),
             clip_to_allocation: true
         });
 
-        this.tickerContainer = this._createActor(St.Widget, {
+        this.tickerContainer = UIUtils.createActor(St.Widget, {
             layout_manager: new Clutter.FixedLayout()
         });
 
-        this.tickerBox1 = this._createActor(St.BoxLayout, {
+        this.tickerBox1 = UIUtils.createActor(St.BoxLayout, {
             reactive: true
         });
 
@@ -229,7 +239,7 @@ class RSSDesklet extends Desklet.Desklet {
             "No Feeds Configured"
         );
 
-        this._setCenter(this.emptyLabel);
+        UIUtils.setCenter(this.emptyLabel);
 
         this.emptyLabel.hide();
 
@@ -237,14 +247,14 @@ class RSSDesklet extends Desklet.Desklet {
             this.emptyLabel
         );
 
-        this.leftFade = this._createActor(St.Widget, {
+        this.leftFade = UIUtils.createActor(St.Widget, {
             reactive: false
         });
 
         this.tickerContainer.add_actor(this.leftFade);
         this.headlineButton.add_actor(this.leftFade);
 
-        this.rightFade = this._createActor(St.Widget, {
+        this.rightFade = UIUtils.createActor(St.Widget, {
             reactive: false
         });
 
@@ -310,7 +320,6 @@ class RSSDesklet extends Desklet.Desklet {
         this._startTicker();
         this._startRefresh();
         this._applyStyle();
-
     }
 
     _bindSetting(key, callback) {
@@ -365,108 +374,6 @@ class RSSDesklet extends Desklet.Desklet {
             this.cacheLabel.hide();
     }
 
-    _updateLastRefreshTime() {
-
-        this.lastRefreshTime = new Date();
-
-        if (!this.lastRefreshMenuItem)
-            return;
-
-        this.lastRefreshMenuItem.label.set_style(`
-            color: white;
-            font-size: 9pt;
-            font-family: monospace;
-        `);
-
-        this.lastRefreshMenuItem.label.text =
-            "Last Refresh: " +
-            this.lastRefreshTime.toLocaleString();
-    }
-
-    _updateFeedStatsMenu() {
-
-        const rssSources =
-            this.feedURLs
-                ? this.feedURLs.split("\n").filter(Boolean).length
-                : 0;
-
-        const redditSources =
-            this.redditFeeds
-                ? this.redditFeeds.split("\n").filter(Boolean).length
-                : 0;
-
-        const stats = this.feedStats || {};
-
-        this.feedStatsMenuItem.label.set_style(`
-            color: white;
-            font-size: 9pt;
-            font-family: monospace;
-        `);
-
-        const pad = (str, len) =>
-            String(str).padEnd(len);
-
-        this.feedStatsMenuItem.label.text =
-            `${pad("Sources", 12)} RSS ${pad(rssSources, 5)}  Reddit ${redditSources}\n` +
-            `${pad("Retrieved", 12)} RSS ${pad(stats.rssRetrieved, 5)}  Reddit ${stats.redditRetrieved}\n` +
-            `${pad("Limited", 12)} RSS ${pad(stats.rssAfterLimit, 5)}  Reddit ${stats.redditAfterLimit}\n` +
-            `${pad("Displayed", 12)} RSS ${pad(stats.rssDisplayed, 5)}  Reddit ${stats.redditDisplayed}`;
-    }
-
-    _setCenter(actor) {
-        actor.x_align = Clutter.ActorAlign.CENTER;
-        actor.y_align = Clutter.ActorAlign.CENTER;
-    }
-
-    _setNoExpand(actor) {
-
-        actor.x_expand = false;
-        actor.y_expand = false;
-    }
-
-    _appendStyle(actor, style) {
-
-        const current =
-            actor.get_style() || "";
-
-        actor.set_style(current + style);
-    }
-
-    _setFixedWidth(actor, width) {
-
-        this._appendStyle(actor, `
-            min-width: ${width}px;
-            max-width: ${width}px;
-        `);
-    }
-
-    _parseRGB(color) {
-
-        const match = (color || "").match(
-            /rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/
-        );
-
-        if (!match) {
-            return { r: 0, g: 0, b: 0 };
-        }
-
-        return {
-            r: parseInt(match[1]),
-            g: parseInt(match[2]),
-            b: parseInt(match[3])
-        };
-    }
-
-    _clamp(value, min, max, fallback = min) {
-
-        value = parseFloat(value);
-
-        if (isNaN(value))
-            value = fallback;
-
-        return Math.min(max, Math.max(min, value));
-    }
-
     _createSpacer(type = "space") {
 
         let text = "";
@@ -488,17 +395,9 @@ class RSSDesklet extends Desklet.Desklet {
             `
         );
 
-        this._setCenter(sep);
+        UIUtils.setCenter(sep);
 
         return sep;
-    }
-
-    _createActor(Type, props = {}) {
-        return new Type({
-            x_expand: false,
-            y_expand: false,
-            ...props
-        });
     }
 
     _getFontParts() {
@@ -587,49 +486,6 @@ class RSSDesklet extends Desklet.Desklet {
             );
     }
 
-    _addLoop(name, interval, callback, seconds = false) {
-
-        this._removeLoop(name);
-
-        const id = seconds
-            ? Mainloop.timeout_add_seconds(
-                interval,
-                callback
-            )
-            : Mainloop.timeout_add(
-                interval,
-                callback
-            );
-
-        this._loops[name] = id;
-
-        return id;
-    }
-
-    _removeLoop(name) {
-
-        const id = this._loops[name];
-
-        if (!id)
-            return;
-
-        Mainloop.source_remove(id);
-
-        delete this._loops[name];
-    }
-
-    _clearLoops() {
-
-        for (const name in this._loops) {
-
-            Mainloop.source_remove(
-                this._loops[name]
-            );
-        }
-
-        this._loops = {};
-    }
-
     // ==================================================
     // CONTEXT MENU
     // ==================================================
@@ -693,7 +549,7 @@ class RSSDesklet extends Desklet.Desklet {
             });
         });
 
-        this._updateLastRefreshTime();
+        this.contextMenu.updateLastRefreshTime();
 
         this._menu.addMenuItem(refreshItem);
 
@@ -741,7 +597,7 @@ class RSSDesklet extends Desklet.Desklet {
 
         this._menu.addMenuItem(this.feedStatsMenuItem);
 
-        this._updateFeedStatsMenu(this.lastHeadlines || []);
+        this.contextMenu.updateFeedStats(this.lastHeadlines || []);
     }
 
     // ==================================================
@@ -775,7 +631,7 @@ class RSSDesklet extends Desklet.Desklet {
 
         this.actor.style_class = "rss-root";
 
-        this._setFixedWidth(
+        UIUtils.setFixedWidth(
             this.actor,
             this.calculatedWidth
         );
@@ -790,12 +646,12 @@ class RSSDesklet extends Desklet.Desklet {
                 rgba(${r}, ${g}, ${b}, ${bgOpacity});
         `);
 
-        this._setFixedWidth(
+        UIUtils.setFixedWidth(
             this.container,
             this.calculatedWidth
         );
 
-        this._setNoExpand(this.container);
+        UIUtils.setNoExpand(this.container);
     }
 
     _applyHeadlineButtonStyle() {
@@ -803,12 +659,12 @@ class RSSDesklet extends Desklet.Desklet {
         this.headlineButton.style_class =
             "rss-headline-button";
 
-        this._setFixedWidth(
+        UIUtils.setFixedWidth(
             this.headlineButton,
             this.calculatedWidth
         );
 
-        this._setNoExpand(this.headlineButton);
+        UIUtils.setNoExpand(this.headlineButton);
     }
 
     _applyViewportStyle() {
@@ -816,7 +672,7 @@ class RSSDesklet extends Desklet.Desklet {
         if (!this.tickerViewport)
             return;
 
-        this._setFixedWidth(
+        UIUtils.setFixedWidth(
             this.tickerViewport,
             this.calculatedWidth
         );
@@ -827,7 +683,7 @@ class RSSDesklet extends Desklet.Desklet {
         this.tickerViewport.height =
             this.tickerHeight;
 
-        this._setNoExpand(this.tickerViewport);
+        UIUtils.setNoExpand(this.tickerViewport);
     }
 
     _applyTickerStyle() {
@@ -835,14 +691,14 @@ class RSSDesklet extends Desklet.Desklet {
         this.tickerContainer.height =
             this.tickerHeight;
 
-        this._setNoExpand(this.tickerContainer);
+        UIUtils.setNoExpand(this.tickerContainer);
 
         this.tickerBox1.height =
             this.tickerHeight;
 
         this.tickerBox1.x_expand = false;
 
-        this._setCenter(this.tickerBox1);
+        UIUtils.setCenter(this.tickerBox1);
     }
 
     _applyFadeStyle(r, g, b, bgOpacity) {
@@ -903,7 +759,7 @@ class RSSDesklet extends Desklet.Desklet {
         if (!this.lastHeadlines)
             return;
 
-        this._rebuildTickerActors(
+        this.tickerBuilder.rebuild(
             this.lastHeadlines
         );
     }
@@ -926,7 +782,7 @@ class RSSDesklet extends Desklet.Desklet {
         try {
 
             const bgOpacity =
-                this._clamp(
+                UIUtils.clamp(
                     this.backgroundOpacity,
                     0,
                     1,
@@ -934,7 +790,7 @@ class RSSDesklet extends Desklet.Desklet {
                 );
 
             this.textOpacity =
-                this._clamp(
+                UIUtils.clamp(
                     this.textOpacity,
                     0,
                     1,
@@ -947,7 +803,7 @@ class RSSDesklet extends Desklet.Desklet {
             this._calculateDimensions();
 
             const { r, g, b } =
-                this._parseRGB(
+                UIUtils.parseRGB(
                     this.backgroundColor
                 );
 
@@ -990,380 +846,6 @@ class RSSDesklet extends Desklet.Desklet {
     // ==================================================
     // FEEDS
     // ==================================================
-
-    _request(url, callback) {
-
-        try {
-
-            const message = Soup.Message.new(
-                "GET",
-                url
-            );
-
-            this._httpSession.send_and_read_async(
-                message,
-                GLib.PRIORITY_DEFAULT,
-                this._cancellable,
-                (session, result) => {
-
-                    if (this._destroyed)
-                        return;
-
-                    try {
-
-                        const bytes =
-                            session.send_and_read_finish(result);
-
-                        const status =
-                            message.get_status();
-
-                        if (status !== Soup.Status.OK) {
-
-                            global.log(
-                                `HTTP ${status}: ${url}`
-                            );
-
-                            callback(null);
-
-                            return;
-                        }
-
-                        callback(bytes);
-
-                    } catch (e) {
-
-                        global.logError(e);
-
-                        callback(null);
-                    }
-                }
-            );
-
-        } catch (e) {
-
-            global.logError(e);
-
-            callback(null);
-        }
-    }
-
-    _httpGet(url, callback) {
-
-        this._request(url, bytes => {
-
-            if (!bytes) {
-
-                callback(null);
-
-                return;
-            }
-
-            const data =
-                new TextDecoder().decode(
-                    bytes.get_data()
-                );
-
-            callback(data);
-        });
-    }
-
-    _downloadFile(url, path) {
-
-        this._request(url, bytes => {
-
-            if (!bytes)
-                return;
-
-            GLib.file_set_contents(
-                path,
-                bytes.get_data()
-            );
-        });
-    }
-
-    _rebuildTickerActors(headlines) {
-
-        const oldOffset =
-            this.offset || 0;
-
-        this._buildTickerContent(
-            headlines,
-            this.tickerBox1
-        );
-
-        this.tickerWidth =
-            this.tickerBox1.get_preferred_width(-1)[1];
-
-        if (this.tickerWidth > 0) {
-
-            this.offset =
-                oldOffset % this.tickerWidth;
-        }
-
-        this.tickerBox1.queue_relayout();
-
-        if (this.tickerClone)
-            this.tickerClone.queue_relayout();
-    }
-
-    _buildTickerContent(headlines, targetBox) {
-
-        if (
-            this._destroyed ||
-            !this.tickerBox1 ||
-            !this.tickerContainer
-        ) {
-            return;
-        }
-
-        this._destroyChildrenSafely(targetBox);
-
-        targetBox.x_expand = false;
-        targetBox.y_expand = false;
-
-        this._buildCryptoTicker(targetBox);
-
-        this._buildNewsTicker(headlines, targetBox);
-
-        targetBox.queue_relayout();
-    }
-
-    _buildCryptoTicker(targetBox) {
-
-        if (
-            !this.showCrypto ||
-            !this.cryptoData ||
-            this.cryptoData.length === 0
-        ) {
-            return;
-        }
-
-        const repeatCount = this._hasNewsFeeds() ? 1 : 6;
-
-
-        for (let r = 0; r < repeatCount; r++) {
-
-            for (const coin of this.cryptoData) {
-
-                targetBox.add_actor(
-                    this._createCryptoRow(coin)
-                );
-
-                targetBox.add_actor(
-                    this._createSpacer("sep")
-                );
-            }
-        }
-    }
-
-    _createCryptoRow(coin) {
-
-        const isUp = coin.change >= 0;
-
-        const color =
-            isUp ? "#00dd66" : "#ff4444";
-
-        const cryptoRow = this._createActor(St.BoxLayout, {
-            vertical: false
-        });
-
-        this._setCenter(cryptoRow);
-
-        const mainLabel = this._createLabel(
-            `${coin.symbol} : ${coin.currencySymbol}${coin.price}`
-        );
-
-        this._setCenter(mainLabel);
-
-        cryptoRow.add_actor(mainLabel);
-
-        const spacer = this._createSpacer();
-
-        this._setCenter(spacer);
-
-        cryptoRow.add_actor(spacer);
-
-        const changeLabel = this._createLabel(
-            `${coin.arrow} ${coin.changeText}%`,
-            color
-        );
-
-        this._setCenter(changeLabel);
-
-        cryptoRow.add_actor(changeLabel);
-
-        return cryptoRow;
-    }
-
-    _buildNewsTicker(headlines, targetBox) {
-
-        if (
-            !this._hasNewsFeeds() ||
-            !Array.isArray(headlines) ||
-            headlines.length === 0
-        ) {
-            return;
-        }
-
-        for (const headline of headlines) {
-
-            targetBox.add_actor(
-                this._createNewsButton(headline)
-            );
-
-            targetBox.add_actor(
-                this._createSpacer("sep")
-            );
-        }
-    }
-
-    _createNewsButton(headline) {
-
-        const btn = new St.Button({
-            reactive: true,
-            can_focus: true,
-            track_hover: true
-        });
-
-        btn.style_class = "rss-news-button";
-
-        const row = this._createActor(St.BoxLayout, {
-            vertical: false
-        });
-
-        // =====================================
-        // FAVICON
-        // =====================================
-
-        const isReddit =
-            headline.isReddit === true;
-
-        const showIcon =
-            isReddit
-                ? this.showRedditIcons
-                : this.showFavicons;
-
-        if (showIcon && headline.domain) {
-
-            const icon = this._createFavicon(
-                headline.domain
-            );
-
-            if (icon)
-                row.add_actor(icon);
-        }
-
-        // =====================================
-        // HEADLINE LABEL
-        // =====================================
-
-        const label = this._createLabel(
-            headline.title || ""
-        );
-
-        row.add_actor(label);
-
-        // =====================================
-        // HOVER HANDLER
-        // =====================================
-
-        // Save original style
-        label._normalStyle = `
-            ${this._getFontCSS()}
-            color: ${this.fontColor};
-        `;
-
-        // Hover style
-        label._hoverStyle = `
-            ${this._getFontCSS()}
-            text-decoration: underline;
-            color: ${this.fontColor};
-        `;
-
-        // Mouse enter
-        btn.connect("enter-event", () => {
-            label.set_style(label._hoverStyle);
-        });
-
-        // Mouse leave
-        btn.connect("leave-event", () => {
-            label.set_style(label._normalStyle);
-        });
-
-        btn.add_actor(row);
-
-        // =====================================
-        // CLICK HANDLER
-        // =====================================
-
-        btn._url = headline.link;
-
-        btn._signalIds = [];
-
-        btn._signalIds.push(
-            btn.connect("clicked", actor => {
-
-                const url = actor._url;
-
-                if (
-                    url &&
-                    (
-                        url.startsWith("http://") ||
-                        url.startsWith("https://")
-                    )
-                ) {
-
-                    Util.spawn([
-                        "xdg-open",
-                        url
-                    ]);
-                }
-            })
-        );
-
-        return btn;
-    }
-
-    _createFavicon(domain) {
-
-        const iconPath =
-            this._getFaviconPath(domain);
-
-        if (
-            !GLib.file_test(
-                iconPath,
-                GLib.FileTest.EXISTS
-            )
-        ) {
-            return null;
-        }
-
-        try {
-
-            const file =
-                Gio.file_new_for_path(iconPath);
-
-            const gicon =
-                Gio.FileIcon.new(file);
-
-            const icon = new St.Icon({
-                gicon,
-                icon_size: this.fontParts.size
-            });
-
-            icon.set_style(`
-                margin-right: 10px;
-            `);
-
-            return icon;
-
-        } catch (e) {
-
-            global.logError(e);
-
-            return null;
-        }
-    }
 
     _getFeedList() {
 
@@ -1452,7 +934,7 @@ class RSSDesklet extends Desklet.Desklet {
         let url =
             `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
 
-        this._downloadFile(url, path);
+        this.network.download(url, path);
     }
 
     _reload() {
@@ -1474,7 +956,7 @@ class RSSDesklet extends Desklet.Desklet {
 
         this._fetchingFeeds = true;
 
-        this._updateLastRefreshTime();
+        this.contextMenu.updateLastRefreshTime();
 
         let feeds = this._getFeedList();
 
@@ -1492,7 +974,7 @@ class RSSDesklet extends Desklet.Desklet {
 
                 this.lastHeadlines = [];
 
-                this._rebuildTickerActors([]);
+                this.tickerBuilder.rebuild([]);
 
             } else {
 
@@ -1511,7 +993,7 @@ class RSSDesklet extends Desklet.Desklet {
 
         feeds.forEach(feedURL => {
 
-            this._httpGet(feedURL, stdout => {
+            this.network.get(feedURL, stdout => {
 
             if (!stdout) {
 
@@ -1538,7 +1020,7 @@ class RSSDesklet extends Desklet.Desklet {
                         this.usingCachedData = true;
                         this._updateCacheIndicator();
 
-                        this._rebuildTickerActors(this.lastHeadlines);
+                        this.tickerBuilder.rebuild(this.lastHeadlines);
 
                     } else {
 
@@ -1683,8 +1165,8 @@ class RSSDesklet extends Desklet.Desklet {
         // -----------------------------
         this.lastHeadlines = finalHeadlines;
 
-        this._rebuildTickerActors(this.lastHeadlines);
-        this._updateFeedStatsMenu();
+        this.tickerBuilder.rebuild(this.lastHeadlines);
+        this.contextMenu.updateFeedStats();
         this._saveCache();
     }
 
@@ -1737,7 +1219,7 @@ class RSSDesklet extends Desklet.Desklet {
 
                 this.cryptoData = cryptoData;
 
-                this._rebuildTickerActors(
+                this.tickerBuilder.rebuild(
                     this.lastHeadlines || []
                 );
             }
@@ -1752,7 +1234,7 @@ class RSSDesklet extends Desklet.Desklet {
                 this.cryptoRefreshInterval || 5
             ) * 60;
 
-        this._addLoop(
+        this.loops.add(
             "crypto",
             interval,
             () => {
@@ -1767,7 +1249,7 @@ class RSSDesklet extends Desklet.Desklet {
 
     _stopCryptoRefresh() {
 
-        this._removeLoop("crypto");
+        this.loops.remove("crypto");
     }
 
     _startRedditRefresh() {
@@ -1778,7 +1260,7 @@ class RSSDesklet extends Desklet.Desklet {
                 this.redditRefreshInterval || 10
             ) * 60;
 
-        this._addLoop(
+        this.loops.add(
             "reddit",
             interval,
             () => {
@@ -1794,7 +1276,7 @@ class RSSDesklet extends Desklet.Desklet {
     }
 
     _stopRedditRefresh() {
-        this._removeLoop("reddit");
+        this.loops.remove("reddit");
     }
 
     _restartRedditRefresh() {
@@ -1846,7 +1328,7 @@ class RSSDesklet extends Desklet.Desklet {
         const step =
             Math.max(0.5, this.speed / 2);
 
-        this._addLoop(
+        this.loops.add(
             "ticker",
             25,
             () => {
@@ -1896,7 +1378,7 @@ class RSSDesklet extends Desklet.Desklet {
 
     _stopTicker() {
 
-        this._removeLoop("ticker");
+        this.loops.remove("ticker");
     }
 
     // ==================================================
@@ -1911,7 +1393,7 @@ class RSSDesklet extends Desklet.Desklet {
                 this.refreshInterval
             ) * 60;
 
-        this._addLoop(
+        this.loops.add(
             "refresh",
             interval,
             () => {
@@ -1926,7 +1408,7 @@ class RSSDesklet extends Desklet.Desklet {
 
     _stopRefresh() {
 
-        this._removeLoop("refresh");
+        this.loops.remove("refresh");
     }
 
     _restartRefresh() {
@@ -1963,9 +1445,9 @@ class RSSDesklet extends Desklet.Desklet {
             this.cryptoData = cache.cryptoData;
         }
 
-        this._updateFeedStatsMenu(this.lastHeadlines || []);
+        this.contextMenu.updateFeedStats(this.lastHeadlines || []);
 
-        this._rebuildTickerActors(
+        this.tickerBuilder.rebuild(
             this.lastHeadlines || []
         );
 
@@ -1983,7 +1465,7 @@ class RSSDesklet extends Desklet.Desklet {
         if (this._cancellable)
             this._cancellable.cancel();
 
-        this._clearLoops();
+        this.loops.clear();
 
         this.tickerBox1 = null;
         this.container = null;

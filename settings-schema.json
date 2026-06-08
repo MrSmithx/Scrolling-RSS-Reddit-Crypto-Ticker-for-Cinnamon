@@ -59,11 +59,10 @@
       "type": "section",
       "title": "RSS Settings",
       "keys": [
-        "maxHeadlines",
+        "maxRSSHeadlines",
         "refreshInterval",
         "showSource",
-        "showFavicons",
-        "randomise"
+        "showFavicons"
       ]
     },
 
@@ -136,6 +135,7 @@
       "keys": [
         "deskletWidth",
         "deskletHeight",
+        "randomise",
         "scrollReverse",
         "enableFade",
         "speed"
@@ -176,16 +176,22 @@
         "min": 5,
         "max": 50,
         "step": 1,
-        "description": "Ticker Height [ px in addition to Font Size]"
+        "description": "Ticker Height [ px in addition to Font Size ]"
     },
 
-    "maxHeadlines": {
+    "maxRSSHeadlines": {
         "type": "spinbutton",
         "default": 10,
         "min": 5,
         "max": 100,
         "step": 1,
         "description": "Maximum Headlines to Display [ 5 - 20 ]"
+    },
+
+    "randomise": {
+        "type": "checkbox",
+        "default": true,
+        "description": "Randomise Headlines & Subreddits"
     },
 
     "speed": {
@@ -223,12 +229,6 @@
         "type": "switch",
         "default": true,
         "description": "Enable Edge Fade [ Left & Right ]"
-    },
-
-    "randomise": {
-        "type": "checkbox",
-        "default": true,
-        "description": "Randomise Headlines"
     },
 
     "fontFamily": {

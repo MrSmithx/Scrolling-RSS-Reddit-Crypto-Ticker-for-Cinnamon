@@ -20,37 +20,29 @@ const DESKLET_DIR =
         .path;
 
 imports.searchPath.unshift(`${DESKLET_DIR}/services`);
-imports.searchPath.unshift(`${DESKLET_DIR}/utils`);
-imports.searchPath.unshift(`${DESKLET_DIR}/ui`);
-imports.searchPath.unshift(`${DESKLET_DIR}/core`);
 imports.searchPath.unshift(`${DESKLET_DIR}/feeds`);
+imports.searchPath.unshift(`${DESKLET_DIR}/utils`);
+imports.searchPath.unshift(`${DESKLET_DIR}/core`);
+imports.searchPath.unshift(`${DESKLET_DIR}/ui`);
 
 const UIUtils = imports.UIUtils.UIUtils;
 const FeedParser = imports.FeedParser.FeedParser;
+const LoopManager = imports.LoopManager.LoopManager;
+const ContextMenu = imports.ContextMenu.ContextMenu;
+const FeedService = imports.FeedService.FeedService;
+const StyleManager = imports.StyleManager.StyleManager;
 const CacheService = imports.CacheService.CacheService;
 const CryptoService = imports.CryptoService.CryptoService;
 const TickerBuilder = imports.TickerBuilder.TickerBuilder;
 const NetworkManager = imports.NetworkManager.NetworkManager;
-const LoopManager = imports.LoopManager.LoopManager;
-const ContextMenu = imports.ContextMenu.ContextMenu;
 const FaviconManager = imports.FaviconManager.FaviconManager;
+const HeadlineProcessor = imports.HeadlineProcessor.HeadlineProcessor;
 
 class RSSDesklet extends Desklet.Desklet {
 
     constructor(metadata, deskletId) {
 
         super(metadata);
-
-        this._menuManager = new PopupMenu.PopupMenuManager(this);
-
-        this.contextMenu = new ContextMenu(
-            this,
-            {
-                refresh: () => this._fetchFeeds(),
-                crypto: () => this._fetchCrypto(),
-                rebuild: () => this._rebuildFromScratch()
-            }
-        );
 
         this._initMetadata();
         this._initSettings(metadata, deskletId);
@@ -118,18 +110,30 @@ class RSSDesklet extends Desklet.Desklet {
             );
         });
 
-        this._bindSetting("refreshInterval", this._restartRefresh);
         this._bindSetting("redditRefreshInterval", this._restartRedditRefresh);
         this._bindSetting("cryptoRefreshInterval", this._startCryptoRefresh);
+        this._bindSetting("refreshInterval", this._restartRefresh);
 
-        this._bindSetting("cryptoSymbols");
         this._bindSetting("cryptoCurrency");
-        this._bindSetting("feedURLs")
+        this._bindSetting("cryptoSymbols");
         this._bindSetting("redditFeeds");
+        this._bindSetting("feedURLs")
 
     }
 
     _initState() {
+
+        this._menuManager = new PopupMenu.PopupMenuManager(this);
+
+        this.headlineProcessor = new HeadlineProcessor();
+
+        this.faviconManager = new FaviconManager(this);
+
+        this.tickerBuilder = new TickerBuilder(this);
+
+        this.styleManager = new StyleManager(this);
+
+        this.contextMenu = new ContextMenu(this);
 
         this.network = new NetworkManager();
 
@@ -137,36 +141,44 @@ class RSSDesklet extends Desklet.Desklet {
 
         this.cache = new CacheService();
 
-        this.faviconManager = new FaviconManager(this);
+        this.loops = new LoopManager();
 
         this.cryptoService = new CryptoService(
             this.network.get.bind(this.network),
             this.cache
         );
 
-        this.loops = new LoopManager();
+        this.feedService = new FeedService(
+            this.network,
+            this.feedParser
+        );
 
-        this.tickerBuilder = new TickerBuilder(this);
-
-        this.contextMenu = new ContextMenu(this);
+        this.contextMenu = new ContextMenu(
+            this,
+            {
+                refresh: () => this._fetchFeeds(),
+                crypto: () => this._fetchCrypto(),
+                rebuild: () => this._rebuildFromScratch()
+            }
+        );
 
         this.offset = 0;
 
         this.isPaused = false;
 
-        this.fontParts = this._getFontParts();
-
         this.cryptoData = [];
-
-        this.usingCachedData = false;
 
         this._loops = {};
 
-        this.cryptoSymbolMap = {};
-
         this.fadeWidth = 100;
 
+        this.cryptoSymbolMap = {};
+
         this._fetchingFeeds = false;
+
+        this.usingCachedData = false;
+
+        this.fontParts = this._getFontParts();
 
         this.maxRSSHeadlines = this.maxRSSHeadlines || 10;
 
@@ -604,179 +616,7 @@ class RSSDesklet extends Desklet.Desklet {
         this.contextMenu.updateFeedStats(this.lastHeadlines || []);
     }
 
-    // ==================================================
-    // STYLE
-    // ==================================================
-
-    _calculateDimensions() {
-
-        const fontSize = this.fontParts.size;
-
-        this.tickerPaddingY = this.deskletHeight;
-
-        this.tickerHeight =
-            Math.ceil(fontSize + (this.tickerPaddingY * 2));
-
-        let width = parseInt(this.deskletWidth);
-
-        if (isNaN(width))
-            width = 800;
-
-        const monitor = global.display.get_monitor_geometry(
-            global.display.get_primary_monitor()
-        );
-
-        width = Math.min(width, monitor.width);
-
-        this.calculatedWidth = width;
-    }
-
-    _applyRootStyle() {
-
-        this.actor.style_class = "rss-root";
-
-        UIUtils.setFixedWidth(
-            this.actor,
-            this.calculatedWidth
-        );
-    }
-
-    _applyContainerStyle(r, g, b, bgOpacity) {
-
-        this.container.style_class = "rss-container";
-
-        this.container.set_style(`
-            background-color:
-                rgba(${r}, ${g}, ${b}, ${bgOpacity});
-        `);
-
-        UIUtils.setFixedWidth(
-            this.container,
-            this.calculatedWidth
-        );
-
-        UIUtils.setNoExpand(this.container);
-    }
-
-    _applyHeadlineButtonStyle() {
-
-        this.headlineButton.style_class =
-            "rss-headline-button";
-
-        UIUtils.setFixedWidth(
-            this.headlineButton,
-            this.calculatedWidth
-        );
-
-        UIUtils.setNoExpand(this.headlineButton);
-    }
-
-    _applyViewportStyle() {
-
-        if (!this.tickerViewport)
-            return;
-
-        UIUtils.setFixedWidth(
-            this.tickerViewport,
-            this.calculatedWidth
-        );
-
-        this.tickerViewport.width =
-            this.calculatedWidth;
-
-        this.tickerViewport.height =
-            this.tickerHeight;
-
-        UIUtils.setNoExpand(this.tickerViewport);
-    }
-
-    _applyTickerStyle() {
-
-        this.tickerContainer.height =
-            this.tickerHeight;
-
-        UIUtils.setNoExpand(this.tickerContainer);
-
-        this.tickerBox1.height =
-            this.tickerHeight;
-
-        this.tickerBox1.x_expand = false;
-
-        UIUtils.setCenter(this.tickerBox1);
-    }
-
-    _applyFadeStyle(r, g, b, bgOpacity) {
-
-        if (!this.enableFade) {
-
-            this.leftFade.hide();
-            this.rightFade.hide();
-
-            return;
-        }
-
-        const fadeRGBA =
-            `rgba(${r}, ${g}, ${b}, ${bgOpacity})`;
-
-        // LEFT
-
-        this.leftFade.set_style(`
-            background-gradient-direction: horizontal;
-            background-gradient-start: ${fadeRGBA};
-            background-gradient-end:
-                rgba(${r}, ${g}, ${b}, 0);
-        `);
-
-        this.leftFade.set_position(0, 0);
-
-        this.leftFade.set_size(
-            this.fadeWidth,
-            this.tickerHeight
-        );
-
-        this.leftFade.show();
-
-        // RIGHT
-
-        this.rightFade.set_style(`
-            background-gradient-direction: horizontal;
-            background-gradient-start:
-                rgba(${r}, ${g}, ${b}, 0);
-            background-gradient-end: ${fadeRGBA};
-        `);
-
-        this.rightFade.set_position(
-            this.calculatedWidth - this.fadeWidth,
-            0
-        );
-
-        this.rightFade.set_size(
-            this.fadeWidth,
-            this.tickerHeight
-        );
-
-        this.rightFade.show();
-    }
-
-    _rebuildIfNeeded() {
-
-        if (!this.lastHeadlines)
-            return;
-
-        this.tickerBuilder.rebuild(
-            this.lastHeadlines
-        );
-    }
-
     _applyStyle() {
-
-        if (
-            this._destroyed ||
-            !this.tickerBox1 ||
-            !this.tickerContainer
-        ) {
-            return;
-        }
 
         if (this._styleLock)
             return;
@@ -785,60 +625,12 @@ class RSSDesklet extends Desklet.Desklet {
 
         try {
 
-            const bgOpacity =
-                UIUtils.clamp(
-                    this.backgroundOpacity,
-                    0,
-                    1,
-                    0.5
-                );
-
-            this.textOpacity =
-                UIUtils.clamp(
-                    this.textOpacity,
-                    0,
-                    1,
-                    1.0
-                );
-
-            this.fontParts =
-                this._getFontParts();
-
-            this._calculateDimensions();
-
-            const { r, g, b } =
-                UIUtils.parseRGB(
-                    this.backgroundColor
-                );
-
-            this._applyRootStyle();
-
-            this._applyContainerStyle(
-                r,
-                g,
-                b,
-                bgOpacity
-            );
-
-            this._applyHeadlineButtonStyle();
-
-            this._applyViewportStyle();
-
-            this._applyTickerStyle();
-
-            this._applyFadeStyle(
-                r,
-                g,
-                b,
-                bgOpacity
-            );
-
-            this._rebuildIfNeeded();
+            this.styleManager.apply();
 
         } catch (e) {
 
             global.logError(
-                "RSSDesklet _applyStyle error: " + e
+                "StyleManager error: " + e
             );
 
         } finally {
@@ -911,24 +703,15 @@ class RSSDesklet extends Desklet.Desklet {
 
     _fetchFeeds() {
 
-        if (this._fetchingFeeds) {
-
-            global.log(
-                "Feed refresh already running, skipping"
-            );
-
+        if (this._fetchingFeeds)
             return;
-        }
 
         this._fetchingFeeds = true;
 
         this.contextMenu.updateLastRefreshTime();
 
-        let feeds = this._getFeedList();
-
-        // =====================================
-        // NO NEWS FEEDS
-        // =====================================
+        const feeds =
+            this._getFeedList();
 
         if (!feeds.length) {
 
@@ -952,197 +735,90 @@ class RSSDesklet extends Desklet.Desklet {
             return;
         }
 
-        let pending = feeds.length;
+        this.feedService.fetch(
+            feeds,
+            {
+                allowNSFW:
+                    this.AllowNSFW,
 
-        let rssHeadlines = [];
-        let redditHeadlines = [];
+                showSource:
+                    this.showSource,
 
-        feeds.forEach(feedURL => {
+                showRedditSource:
+                    this.showRedditSource
+            },
+            result => {
 
-            this.network.get(feedURL, stdout => {
+                this._fetchingFeeds = false;
 
-            if (!stdout) {
+                const processed =
+                    this.headlineProcessor.process(
+                        result.rss,
+                        result.reddit,
+                        {
+                            randomise:
+                                this.randomise,
 
-                pending--;
+                            maxRSSHeadlines:
+                                this.maxRSSHeadlines,
 
-                // If ALL feeds failed and we already have cache,
-                // keep the cached headlines instead of clearing UI
-                if (pending <= 0) {
+                            maxRedditHeadlines:
+                                this.maxRedditHeadlines
+                        }
+                    );
 
-                    this._fetchingFeeds = false;
+                // Cache fallback
 
-                    const allHeadlines =
-                        rssHeadlines.concat(redditHeadlines);
+                if (
+                    processed.headlines.length === 0 &&
+                    this.lastHeadlines &&
+                    this.lastHeadlines.length > 0
+                ) {
 
-                    if (allHeadlines.length > 0) {
+                    this.usingCachedData = true;
 
-                        this._finalizeHeadlines(allHeadlines);
+                    this._updateCacheIndicator();
 
-                    } else if (this.lastHeadlines &&
-                               this.lastHeadlines.length > 0) {
+                    this.tickerBuilder.rebuild(
+                        this.lastHeadlines
+                    );
 
-                        global.log("Using cached RSS headlines");
-
-                        this.usingCachedData = true;
-                        this._updateCacheIndicator();
-
-                        this.tickerBuilder.rebuild(this.lastHeadlines);
-
-                    } else {
-
-                        this._finalizeHeadlines([]);
-                    }
+                    return;
                 }
 
-                return;
-            }
+                this.feedStats =
+                    processed.stats;
 
-                try {
+                this.lastHeadlines =
+                    processed.headlines;
 
-                let items = this.feedParser.parse(stdout, feedURL, {
-                    allowNSFW: this.AllowNSFW,
-                    showSource: this.showSource,
-                    showRedditSource: this.showRedditSource
-                });
+                if (
+                    this.lastHeadlines.length > 0 ||
+                    this.showCrypto
+                ) {
 
-                items.forEach(item => {
+                    this._hideEmptyMessage();
 
-                    if (item.domain)
-                        this.faviconManager.fetch(
-                            item.domain
-                        );
-
-                });
-
-                // classify
-                if (items.length > 0 && items[0].isReddit) {
-                    redditHeadlines = redditHeadlines.concat(items);
                 } else {
-                    rssHeadlines = rssHeadlines.concat(items);
+
+                    this._showEmptyMessage(
+                        "No Feeds Configured"
+                    );
                 }
 
-                } catch (e) {
+                this.usingCachedData = false;
 
-                    global.logError(e);
-                }
+                this._updateCacheIndicator();
 
-                pending--;
+                this.tickerBuilder.rebuild(
+                    this.lastHeadlines
+                );
 
-                if (pending <= 0) {
+                this.contextMenu.updateFeedStats();
 
-                    this._fetchingFeeds = false;
-
-                    const allHeadlines =
-                        rssHeadlines.concat(redditHeadlines);
-
-                    this._finalizeHeadlines(allHeadlines);
-                }
-            });
-        });
-    }
-
-    _finalizeHeadlines(incomingHeadlines) {
-
-        this._fetchingFeeds = false;
-
-        // -----------------------------
-        // split by type (from incoming)
-        // -----------------------------
-        let rssHeadlines =
-            incomingHeadlines.filter(h => !h.isReddit);
-
-        let redditHeadlines =
-            incomingHeadlines.filter(h => h.isReddit);
-
-        this.feedStats.rssRetrieved =
-            rssHeadlines.length;
-
-        this.feedStats.redditRetrieved =
-            redditHeadlines.length;
-
-        // Randomise individual feeds before limiting
-        if (this.randomise) {
-
-            const shuffle = arr => {
-                for (let i = arr.length - 1; i > 0; i--) {
-                    const j =
-                        Math.floor(Math.random() * (i + 1));
-
-                    [arr[i], arr[j]] =
-                        [arr[j], arr[i]];
-                }
-            };
-
-            shuffle(rssHeadlines);
-            shuffle(redditHeadlines);
-        }
-
-        // -----------------------------
-        // apply separate limits
-        // -----------------------------
-        rssHeadlines =
-            rssHeadlines.slice(0, this.maxRSSHeadlines || 10);
-
-        redditHeadlines =
-            redditHeadlines.slice(0, this.maxRedditHeadlines || 10);
-
-        this.feedStats.rssAfterLimit =
-            rssHeadlines.length;
-
-        this.feedStats.redditAfterLimit =
-            redditHeadlines.length;
-
-        // -----------------------------
-        // merge FINAL result
-        // -----------------------------
-        let finalHeadlines =
-            rssHeadlines.concat(redditHeadlines);
-
-        // -----------------------------
-        // empty handling
-        // -----------------------------
-        if (finalHeadlines.length > 0 || this.showCrypto) {
-            this._hideEmptyMessage();
-        }
-
-        this.usingCachedData = false;
-        this._updateCacheIndicator();
-
-        // -----------------------------
-        // deduplicate
-        // -----------------------------
-        let seen = {};
-        finalHeadlines = finalHeadlines.filter(h => {
-            if (seen[h.link]) return false;
-            seen[h.link] = true;
-            return true;
-        });
-
-        this.feedStats.rssDisplayed =
-            finalHeadlines.filter(h => !h.isReddit).length;
-
-        this.feedStats.redditDisplayed =
-            finalHeadlines.filter(h => h.isReddit).length;
-
-        // -----------------------------
-        // randomise ALL limited feeds
-        // -----------------------------
-        if (this.randomise) {
-            for (let i = finalHeadlines.length - 1; i > 0; i--) {
-                let j = Math.floor(Math.random() * (i + 1));
-                [finalHeadlines[i], finalHeadlines[j]] =
-                    [finalHeadlines[j], finalHeadlines[i]];
+                this._saveCache();
             }
-        }
-
-        // -----------------------------
-        // update buffer (clean version)
-        // -----------------------------
-        this.lastHeadlines = finalHeadlines;
-
-        this.tickerBuilder.rebuild(this.lastHeadlines);
-        this.contextMenu.updateFeedStats();
-        this._saveCache();
+        );
     }
 
     _rebuildFromScratch() {

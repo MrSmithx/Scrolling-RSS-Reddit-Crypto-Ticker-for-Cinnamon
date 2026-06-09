@@ -192,6 +192,10 @@ var TickerBuilder = class TickerBuilder {
             headline.domain
         ) {
 
+            d.faviconManager.fetch(
+                headline.domain
+            );
+
             const icon =
                 d.faviconManager.createIcon(
                     headline.domain

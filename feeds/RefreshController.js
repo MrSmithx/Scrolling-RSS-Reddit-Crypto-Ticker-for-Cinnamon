@@ -104,7 +104,7 @@ var RefreshController = class RefreshController {
             interval,
             () => {
 
-                d._fetchCrypto();
+                d.cryptoController.fetchCrypto();
 
                 return true;
             },

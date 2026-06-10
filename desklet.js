@@ -18,6 +18,7 @@ imports.searchPath.unshift(`${DESKLET_DIR}/core`);
 imports.searchPath.unshift(`${DESKLET_DIR}/ui`);
 
 const UIUtils = imports.UIUtils.UIUtils;
+const UIBuilder = imports.UIBuilder.UIBuilder;
 const FeedParser = imports.FeedParser.FeedParser;
 const LoopManager = imports.LoopManager.LoopManager;
 const ContextMenu = imports.ContextMenu.ContextMenu;
@@ -28,7 +29,10 @@ const CryptoService = imports.CryptoService.CryptoService;
 const TickerBuilder = imports.TickerBuilder.TickerBuilder;
 const NetworkManager = imports.NetworkManager.NetworkManager;
 const FaviconManager = imports.FaviconManager.FaviconManager;
+const FeedController = imports.FeedController.FeedController;
 const CallbackManager = imports.CallbackManager.CallbackManager;
+const CryptoController = imports.CryptoController.CryptoController;
+const TickerController = imports.TickerController.TickerController;
 const HeadlineProcessor = imports.HeadlineProcessor.HeadlineProcessor;
 const RefreshController = imports.RefreshController.RefreshController;
 
@@ -41,7 +45,7 @@ class RSSDesklet extends Desklet.Desklet {
         this._initMetadata();
         this._initSettings(metadata, deskletId);
         this._initState();
-        this._initUI();
+        this.uiBuilder.build();
         this._initEvents();
         this._startServices();
     }
@@ -66,7 +70,6 @@ class RSSDesklet extends Desklet.Desklet {
 
         const settingGroups = {
             _reload: [
-                
                 "maxRedditHeadlines",
                 "showRedditSource",
                 "showRedditIcons",
@@ -132,7 +135,13 @@ class RSSDesklet extends Desklet.Desklet {
 
         this.refreshController = new RefreshController(this);
 
+        this.cryptoController = new CryptoController(this);
+
+        this.tickerController = new TickerController(this);
+
         this.headlineProcessor = new HeadlineProcessor();
+
+        this.feedController = new FeedController(this);
 
         this.faviconManager = new FaviconManager(this);
 
@@ -141,6 +150,8 @@ class RSSDesklet extends Desklet.Desklet {
         this.styleManager = new StyleManager(this);
 
         this.callbacks = new CallbackManager(this);
+
+        this.uiBuilder = new UIBuilder(this);
 
         this.network = new NetworkManager();
 
@@ -163,9 +174,9 @@ class RSSDesklet extends Desklet.Desklet {
         this.contextMenu = new ContextMenu(
             this,
             {
-                refresh: () => this._fetchFeeds(),
-                crypto: () => this._fetchCrypto(),
-                rebuild: () => this._rebuildFromScratch()
+                refresh: () => this.feedsController.fetchFeeds(),
+                crypto: () => this.cryptoController.fetchCrypto(),
+                rebuild: () => this.feedController.rebuildFromScratch()
             }
         );
 
@@ -199,99 +210,6 @@ class RSSDesklet extends Desklet.Desklet {
             rssDisplayed: 0,
             redditDisplayed: 0
         };
-    }
-
-    _initUI() {
-
-        this.actor.style_class = "rss-root";
-
-        this.container = UIUtils.createActor(St.BoxLayout, {
-            reactive: true,
-            clip_to_allocation: true,
-            vertical: false
-        });
-
-        this.headlineButton = UIUtils.createActor(St.BoxLayout, {
-            reactive: true,
-            track_hover: true,
-            can_focus: true
-        });
-
-        this.headlineButton.style_class = "rss-headline-button";
-
-        this.cacheLabel = this._createLabel(
-            "Offline Cache",
-            "#ffaa00",
-            `
-                padding-left: 10px;
-                padding-right: 10px;
-                font-weight: bold;
-            `
-        );
-
-        UIUtils.setCenter(this.cacheLabel);
-
-        this.cacheLabel.hide();
-
-        this.container.add_actor(this.cacheLabel);
-
-        this.tickerViewport = UIUtils.createActor(St.Widget, {
-            layout_manager: new Clutter.BinLayout(),
-            clip_to_allocation: true
-        });
-
-        this.tickerContainer = UIUtils.createActor(St.Widget, {
-            layout_manager: new Clutter.FixedLayout()
-        });
-
-        this.tickerBox1 = UIUtils.createActor(St.BoxLayout, {
-            reactive: true
-        });
-
-        this.tickerClone = new Clutter.Clone({
-            source: this.tickerBox1,
-            reactive: false
-        });
-
-        this.tickerContainer.add_actor(this.tickerBox1);
-        this.tickerContainer.add_actor(this.tickerClone);
-
-        this.tickerViewport.add_actor(this.tickerContainer);
-
-        this.emptyLabel = this._createLabel(
-            "No Feeds Configured"
-        );
-
-        UIUtils.setCenter(this.emptyLabel);
-
-        this.emptyLabel.hide();
-
-        this.tickerViewport.add_actor(
-            this.emptyLabel
-        );
-
-        this.leftFade = UIUtils.createActor(St.Widget, {
-            reactive: false
-        });
-
-        this.tickerContainer.add_actor(this.leftFade);
-        this.headlineButton.add_actor(this.leftFade);
-
-        this.rightFade = UIUtils.createActor(St.Widget, {
-            reactive: false
-        });
-
-        this.tickerContainer.add_actor(this.rightFade);
-        this.headlineButton.add_actor(this.rightFade);
-
-        this.tickerContainer.set_clip_to_allocation(false);
-
-        this.headlineButton.add_actor(this.tickerViewport);
-
-        this.container.add_actor(this.headlineButton);
-
-        this.setContent(this.container);
-
     }
 
     _initEvents() {
@@ -335,14 +253,14 @@ class RSSDesklet extends Desklet.Desklet {
 
     _startServices() {
 
-        this._loadCache();
-        this._fetchFeeds();
-        this._fetchCrypto();
+        this.feedController.restoreCache();
+        this.feedController.fetchFeeds();
+        this.cryptoController.fetchCrypto();
         this.refreshController.startRedditRefresh();
         this.refreshController.startCryptoRefresh();
         this.refreshController.startFeedRefresh();
-        this._startTicker();
-        this._applyStyle();
+        this.tickerController.start();
+        this.styleManager.apply();
     }
 
     _bindSetting(key, callback) {
@@ -511,13 +429,13 @@ class RSSDesklet extends Desklet.Desklet {
 
     refreshAllFeeds() {
 
-        this._fetchCrypto();
-        this._fetchFeeds();
+        this.cryptoController.fetchCrypto();
+        this.feedController.fetchFeeds();
     }
 
     rebuildFeeds() {
 
-        this._rebuildFromScratch();
+        this.feedController.rebuildFromScratch();
     }
 
     _applyStyle() {
@@ -599,188 +517,6 @@ class RSSDesklet extends Desklet.Desklet {
 
     }
 
-    _reload() {
-
-        this.lastHeadlines = [];
-        this._fetchFeeds();
-    }
-
-    _fetchFeeds() {
-
-        if (this._fetchingFeeds)
-            return;
-
-        this._fetchingFeeds = true;
-
-        this.contextMenu.updateLastRefreshTime();
-
-        const feeds =
-            this._getFeedList();
-
-        if (!feeds.length) {
-
-            this._fetchingFeeds = false;
-
-            if (this.showCrypto) {
-
-                this._hideEmptyMessage();
-
-                this.lastHeadlines = [];
-
-                this.tickerBuilder.rebuild([]);
-
-            } else {
-
-                this._showEmptyMessage(
-                    "No Feeds Configured"
-                );
-            }
-
-            return;
-        }
-
-        this.feedService.fetch(
-            feeds,
-            {
-                allowNSFW:
-                    this.AllowNSFW,
-
-                showSource:
-                    this.showSource,
-
-                showRedditSource:
-                    this.showRedditSource
-            },
-            result => {
-
-                this._fetchingFeeds = false;
-
-                const processed =
-                    this.headlineProcessor.process(
-                        result.rss,
-                        result.reddit,
-                        {
-                            randomise:
-                                this.randomise,
-
-                            maxRSSHeadlines:
-                                this.maxRSSHeadlines,
-
-                            maxRedditHeadlines:
-                                this.maxRedditHeadlines
-                        }
-                    );
-
-                // Cache fallback
-
-                if (
-                    processed.headlines.length === 0 &&
-                    this.lastHeadlines &&
-                    this.lastHeadlines.length > 0
-                ) {
-
-                    this.usingCachedData = true;
-
-                    this._updateCacheIndicator();
-
-                    this.tickerBuilder.rebuild(
-                        this.lastHeadlines
-                    );
-
-                    return;
-                }
-
-                this.feedStats =
-                    processed.stats;
-
-                this.lastHeadlines =
-                    processed.headlines;
-
-                if (
-                    this.lastHeadlines.length > 0 ||
-                    this.showCrypto
-                ) {
-
-                    this._hideEmptyMessage();
-
-                } else {
-
-                    this._showEmptyMessage(
-                        "No Feeds Configured"
-                    );
-                }
-
-                this.usingCachedData = false;
-
-                this._updateCacheIndicator();
-
-                this.tickerBuilder.rebuild(
-                    this.lastHeadlines
-                );
-
-                this.contextMenu.updateFeedStats();
-
-                this._saveCache();
-            }
-        );
-    }
-
-    _rebuildFromScratch() {
-
-        // Stop ticker to avoid mid-scroll mutation
-        this._stopTicker();
-
-        // Reset state that affects layout/scroll
-        this.offset = 0;
-        this.pendingHeadlines = null;
-        this.lastHeadlines = [];
-
-        // Clear UI safely
-        this._destroyChildrenSafely(this.tickerBox1);
-
-        // Re-fetch everything fresh
-        this._fetchFeeds();
-
-        // Restart ticker after rebuild
-        this._startTicker();
-    }
-
-    // ==================================================
-    // CRYPTO
-    // ==================================================
-
-    _fetchCrypto() {
-
-        if (!this.showCrypto) {
-
-            this._fetchFeeds();
-
-            return;
-        }
-
-        const symbols =
-            (this.cryptoSymbols || "bitcoin\nethereum")
-            .split("\n")
-            .map(s => s.trim())
-            .filter(Boolean);
-
-        const currency =
-            (this.cryptoCurrency || "usd").toLowerCase();
-
-        this.cryptoService.fetch(symbols, currency, cryptoData => {
-
-                if (!cryptoData)
-                    return;
-
-                this.cryptoData = cryptoData;
-
-                this.tickerBuilder.rebuild(
-                    this.lastHeadlines || []
-                );
-            }
-        );
-    }
-
     // ==================================================
     // SETTINGS CALLBACKS
     // ==================================================
@@ -799,107 +535,6 @@ class RSSDesklet extends Desklet.Desklet {
 
     on_copy_ETH() {
         this.callbacks.onCopyETH();
-    }
-
-    // ==================================================
-    // TICKER
-    // ==================================================
-
-    _startTicker() {
-
-        this.offset = 0;
-
-        const step =
-            Math.max(0.5, this.speed / 2);
-
-        this.loops.add(
-            "ticker",
-            25,
-            () => {
-
-                if (this.isPaused)
-                    return true;
-
-                if (this._destroyed || !this.tickerBox1 || !this.tickerClone)
-                    return true;
-
-                const width1 =
-                    this.tickerWidth || 0;
-
-                if (width1 <= 0)
-                    return true;
-
-                const direction =
-                    this.scrollReverse ? -1 : 1;
-
-                this.offset += step * direction;
-
-                if (!this.scrollReverse) {
-
-                    if (this.offset >= width1)
-                        this.offset -= width1;
-
-                } else {
-
-                    if (this.offset < 0)
-                        this.offset += width1;
-                }
-
-                this.tickerBox1.set_position(
-                    -this.offset,
-                    0
-                );
-
-                this.tickerClone.set_position(
-                    width1 - this.offset,
-                    0
-                );
-
-                return true;
-            }
-        );
-    }
-
-    _stopTicker() {
-
-        this.loops.remove("ticker");
-    }
-
-    // ==================================================
-    // CACHE
-    // ==================================================
-
-    _saveCache() {
-
-        this.cache.saveRSSCache(
-            this.lastHeadlines || [],
-            this.cryptoData || []
-        );
-    }
-
-    _loadCache() {
-
-        const cache =
-            this.cache.loadRSSCache();
-
-        if (!cache)
-            return false;
-
-        if (Array.isArray(cache.headlines)) {
-            this.lastHeadlines = cache.headlines;
-        }
-
-        if (Array.isArray(cache.cryptoData)) {
-            this.cryptoData = cache.cryptoData;
-        }
-
-        this.contextMenu.updateFeedStats(this.lastHeadlines || []);
-
-        this.tickerBuilder.rebuild(
-            this.lastHeadlines || []
-        );
-
-        return true;
     }
 
     // ==================================================

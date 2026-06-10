@@ -1,18 +1,10 @@
+const St = imports.gi.St;
+const Main = imports.ui.main;
+const Pango = imports.gi.Pango;
+const Clutter = imports.gi.Clutter;
 const Desklet = imports.ui.desklet;
 const Settings = imports.ui.settings;
-const Mainloop = imports.mainloop;
-const Main = imports.ui.main;
 const PopupMenu = imports.ui.popupMenu;
-const DeskletManager = imports.ui.deskletManager;
-
-const St = imports.gi.St;
-const GLib = imports.gi.GLib;
-const Gio = imports.gi.Gio;
-const Pango = imports.gi.Pango;
-const Soup = imports.gi.Soup;
-const Util = imports.misc.util;
-
-const Clutter = imports.gi.Clutter;
 
 const DESKLET_DIR =
     imports.ui.deskletManager
@@ -36,7 +28,9 @@ const CryptoService = imports.CryptoService.CryptoService;
 const TickerBuilder = imports.TickerBuilder.TickerBuilder;
 const NetworkManager = imports.NetworkManager.NetworkManager;
 const FaviconManager = imports.FaviconManager.FaviconManager;
+const CallbackManager = imports.CallbackManager.CallbackManager;
 const HeadlineProcessor = imports.HeadlineProcessor.HeadlineProcessor;
+const RefreshController = imports.RefreshController.RefreshController;
 
 class RSSDesklet extends Desklet.Desklet {
 
@@ -49,7 +43,6 @@ class RSSDesklet extends Desklet.Desklet {
         this._initState();
         this._initUI();
         this._initEvents();
-        this._addContextMenu();
         this._startServices();
     }
 
@@ -73,34 +66,35 @@ class RSSDesklet extends Desklet.Desklet {
 
         const settingGroups = {
             _reload: [
-                "maxRSSHeadlines",
-                "showSource",
-                "randomise",
-                "showFavicons",
+                
                 "maxRedditHeadlines",
                 "showRedditSource",
                 "showRedditIcons",
-                "AllowNSFW",
-                "redditSort"
+                "maxRSSHeadlines",
+                "showFavicons",
+                "showSource",
+                "redditSort",
+                "randomise",
+                "AllowNSFW"
             ],
             _applyStyle: [
                 "backgroundOpacity",
                 "backgroundColor",
-                "deskletWidth",
                 "deskletHeight",
-                "fontFamily",
-                "fontColor",
+                "deskletWidth",
                 "textOpacity",
-                "enableFade"
+                "fontFamily",
+                "enableFade",
+                "fontColor"
             ],
             _startTicker: [
-                "speed",
-                "scrollReverse"
+                "scrollReverse",
+                "speed"
             ],
             _rebuildFromScratch: [
-                "showRSS",
                 "enableReddit",
-                "showCrypto"
+                "showCrypto",
+                "showRSS"
             ]
         };
 
@@ -110,9 +104,20 @@ class RSSDesklet extends Desklet.Desklet {
             );
         });
 
-        this._bindSetting("redditRefreshInterval", this._restartRedditRefresh);
-        this._bindSetting("cryptoRefreshInterval", this._startCryptoRefresh);
-        this._bindSetting("refreshInterval", this._restartRefresh);
+        this._bindSetting(
+            "refreshInterval",
+            () => this.refreshController.restartFeedRefresh()
+        );
+
+        this._bindSetting(
+            "redditRefreshInterval",
+            () => this.refreshController.restartRedditRefresh()
+        );
+
+        this._bindSetting(
+            "cryptoRefreshInterval",
+            () => this.refreshController.restartCryptoRefresh()
+        );
 
         this._bindSetting("cryptoCurrency");
         this._bindSetting("cryptoSymbols");
@@ -125,6 +130,8 @@ class RSSDesklet extends Desklet.Desklet {
 
         this._menuManager = new PopupMenu.PopupMenuManager(this);
 
+        this.refreshController = new RefreshController(this);
+
         this.headlineProcessor = new HeadlineProcessor();
 
         this.faviconManager = new FaviconManager(this);
@@ -133,7 +140,7 @@ class RSSDesklet extends Desklet.Desklet {
 
         this.styleManager = new StyleManager(this);
 
-        this.contextMenu = new ContextMenu(this);
+        this.callbacks = new CallbackManager(this);
 
         this.network = new NetworkManager();
 
@@ -331,10 +338,10 @@ class RSSDesklet extends Desklet.Desklet {
         this._loadCache();
         this._fetchFeeds();
         this._fetchCrypto();
-        this._startRedditRefresh();
-        this._startCryptoRefresh();
+        this.refreshController.startRedditRefresh();
+        this.refreshController.startCryptoRefresh();
+        this.refreshController.startFeedRefresh();
         this._startTicker();
-        this._startRefresh();
         this._applyStyle();
     }
 
@@ -502,118 +509,15 @@ class RSSDesklet extends Desklet.Desklet {
             );
     }
 
-    // ==================================================
-    // CONTEXT MENU
-    // ==================================================
+    refreshAllFeeds() {
 
-    _addContextMenu() {
+        this._fetchCrypto();
+        this._fetchFeeds();
+    }
 
-        this._menu = new PopupMenu.PopupMenu(
-            this.actor,
-            0.0,
-            St.Side.TOP
-        );
+    rebuildFeeds() {
 
-        Main.uiGroup.add_actor(this._menu.actor);
-
-        this._menu.actor.hide();
-
-        this._menuManager.addMenu(this._menu);
-
-        // ---------------------------------
-        // Refresh Feeds
-        // ---------------------------------
-
-        const updateItem =
-            new PopupMenu.PopupIconMenuItem(
-                "Update All Feeds",
-                "view-refresh-symbolic",
-                St.IconType.SYMBOLIC
-            );
-
-        updateItem.connect("activate", () => {
-
-            Main.notify(
-                "Scrolling RSS, Reddit & Crypto Ticker",
-                "Updating Feeds..."
-            );
-
-            this._fetchCrypto();
-
-            this._fetchFeeds();
-        });
-
-        this._menu.addMenuItem(updateItem);
-
-        const refreshItem =
-            new PopupMenu.PopupIconMenuItem(
-                "Remove & Refresh All Feeds",
-                "edit-delete",
-                St.IconType.SYMBOLIC
-            );
-
-        refreshItem.connect("activate", () => {
-
-            Main.notify(
-                "Scrolling RSS, Reddit & Crypto Ticker",
-                "Removing & Refreshing Feeds..."
-            );
-
-            Mainloop.idle_add(() => {
-                this._rebuildFromScratch();
-                return false;
-            });
-        });
-
-        this.contextMenu.updateLastRefreshTime();
-
-        this._menu.addMenuItem(refreshItem);
-
-        // ---------------------------------
-        // Separator
-        // ---------------------------------
-
-        this._menu.addMenuItem(
-            new PopupMenu.PopupSeparatorMenuItem()
-        );
-
-        // ---------------------------------
-        // Last Refresh Time
-        // ---------------------------------
-
-        this.lastRefreshMenuItem =
-            new PopupMenu.PopupMenuItem(
-                "Last Refresh: Never"
-            );
-
-        this.lastRefreshMenuItem.setSensitive(false);
-
-        this.lastRefreshMenuItem.label.set_style(`
-            color: white;
-        `);
-
-        this._menu.addMenuItem(
-            this.lastRefreshMenuItem
-        );
-
-        // ---------------------------------
-        // Feed Stats (Sources + Articles)
-        // ---------------------------------
-
-        this.feedStatsMenuItem =
-            new PopupMenu.PopupMenuItem(
-                "Feeds: ..."
-            );
-
-        this.feedStatsMenuItem.setSensitive(false);
-
-        this.feedStatsMenuItem.label.set_style(`
-            color: white;
-        `);
-
-        this._menu.addMenuItem(this.feedStatsMenuItem);
-
-        this.contextMenu.updateFeedStats(this.lastHeadlines || []);
+        this._rebuildFromScratch();
     }
 
     _applyStyle() {
@@ -877,95 +781,24 @@ class RSSDesklet extends Desklet.Desklet {
         );
     }
 
-    _startCryptoRefresh() {
-
-        const interval =
-            Math.max(
-                1,
-                this.cryptoRefreshInterval || 5
-            ) * 60;
-
-        this.loops.add(
-            "crypto",
-            interval,
-            () => {
-
-                this._fetchCrypto();
-
-                return true;
-            },
-            true
-        );
-    }
-
-    _stopCryptoRefresh() {
-
-        this.loops.remove("crypto");
-    }
-
-    _startRedditRefresh() {
-
-        const interval =
-            Math.max(
-                1,
-                this.redditRefreshInterval || 10
-            ) * 60;
-
-        this.loops.add(
-            "reddit",
-            interval,
-            () => {
-
-                if (this.enableReddit) {
-                    this._fetchFeeds();
-                }
-
-                return true;
-            },
-            true
-        );
-    }
-
-    _stopRedditRefresh() {
-        this.loops.remove("reddit");
-    }
-
-    _restartRedditRefresh() {
-        this._stopRedditRefresh();
-        this._startRedditRefresh();
-    }
-
     // ==================================================
     // SETTINGS CALLBACKS
     // ==================================================
 
     onCryptoUpdatePressed() {
-
-        // Re-fetch crypto using latest settings
-        this._fetchCrypto();
+        return this.callbacks.onCryptoUpdatePressed();
     }
 
     onFeedsUpdatePressed() {
-
-        // Re-fetch RSS & Reddit using latest settings
-        this._fetchFeeds();
-    }
-
-    _copyToClipboard(text) {
-        St.Clipboard.get_default().set_text(
-            St.ClipboardType.CLIPBOARD,
-            text
-        );
+        return this.callbacks.onFeedsUpdatePressed();
     }
 
     on_copy_BTC() {
-        this._copyToClipboard("1PRxxyxpz6Qh5sgdKn1TKKh2NZed3B7NX9");
-        Main.notify("Bitcoin Address Copied", "Your Support is Greatly Appreciated.");
+        this.callbacks.onCopyBTC();
     }
 
     on_copy_ETH() {
-        this._copyToClipboard("0xe1cA43145846fb476FED56645FCbA0B9B55be79B");
-        Main.notify("Ethereum Address Copied", "Your Support is Greatly Appreciated.");
+        this.callbacks.onCopyETH();
     }
 
     // ==================================================
@@ -1030,42 +863,6 @@ class RSSDesklet extends Desklet.Desklet {
     _stopTicker() {
 
         this.loops.remove("ticker");
-    }
-
-    // ==================================================
-    // REFRESH
-    // ==================================================
-
-    _startRefresh() {
-
-        const interval =
-            Math.max(
-                1,
-                this.refreshInterval
-            ) * 60;
-
-        this.loops.add(
-            "refresh",
-            interval,
-            () => {
-
-                this._fetchFeeds();
-
-                return true;
-            },
-            true
-        );
-    }
-
-    _stopRefresh() {
-
-        this.loops.remove("refresh");
-    }
-
-    _restartRefresh() {
-
-        this._stopRefresh();
-        this._startRefresh();
     }
 
     // ==================================================

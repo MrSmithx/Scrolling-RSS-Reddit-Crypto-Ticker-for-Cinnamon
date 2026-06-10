@@ -52,8 +52,7 @@ var ContextMenu = class ContextMenu {
                     "Updating Feeds..."
                 );
 
-                d._fetchCrypto();
-                d._fetchFeeds();
+                d.refreshAllFeeds();
             }
         );
 
@@ -83,7 +82,7 @@ var ContextMenu = class ContextMenu {
 
                 Mainloop.idle_add(() => {
 
-                    d._rebuildFromScratch();
+                    d.rebuildFeeds();
 
                     return false;
                 });

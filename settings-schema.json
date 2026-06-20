@@ -1,5 +1,5 @@
 {
-  "layoutExit": {
+  "layout": {
     "type": "layout",
     "pages": [
       "page_Ticker",
@@ -10,7 +10,7 @@
 
     "page_Ticker": {
       "type": "page",
-      "title": "RSS Settings",
+      "title": "News Settings",
       "sections": [
         "sectionFeeds",
         "sectionNews"
@@ -47,7 +47,7 @@
 
     "sectionFeeds": {
       "type": "section",
-      "title": "RSS Feeds",
+      "title": "News Feeds",
       "keys": [
         "showRSS",
         "feedURLs",
@@ -57,12 +57,13 @@
 
     "sectionNews": {
       "type": "section",
-      "title": "RSS Settings",
+      "title": "News Settings",
       "keys": [
-        "maxRSSHeadlines",
+        "maxHeadlines",
         "refreshInterval",
         "showSource",
-        "showFavicons"
+        "showFavicons",
+        "randomise"
       ]
     },
 
@@ -84,7 +85,7 @@
         "redditRefreshInterval",
         "showRedditSource",
         "showRedditIcons",
-        "AllowNSFW",
+        "allowNSFW",
         "redditSort"
       ]
     },
@@ -135,7 +136,6 @@
       "keys": [
         "deskletWidth",
         "deskletHeight",
-        "randomise",
         "scrollReverse",
         "enableFade",
         "speed"
@@ -146,18 +146,18 @@
     "showRSS": {
         "type": "checkbox",
         "default": true,
-        "description": "Show RSS in Ticker"
+        "description": "Show News in Ticker"
     },
 
     "feedURLs": {
         "type": "textview",
         "default": "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
-        "description": "RSS Feed URLs [ One Feed Per Line ]"
+        "description": "News RSS Feed URLs [ One Feed Per Line ]"
     },
 
     "updateRSS": {
         "type": "button",
-        "description": "Update RSS Feed",
+        "description": "Update News Feed",
         "callback": "onFeedsUpdatePressed"
     },
 
@@ -176,22 +176,16 @@
         "min": 5,
         "max": 50,
         "step": 1,
-        "description": "Ticker Height [ px in addition to Font Size ]"
+        "description": "Ticker Height [ px ]"
     },
 
-    "maxRSSHeadlines": {
+    "maxHeadlines": {
         "type": "spinbutton",
         "default": 10,
         "min": 5,
         "max": 100,
         "step": 1,
         "description": "Maximum Headlines to Display [ 5 - 20 ]"
-    },
-
-    "randomise": {
-        "type": "checkbox",
-        "default": true,
-        "description": "Randomise Headlines & Subreddits"
     },
 
     "speed": {
@@ -229,6 +223,12 @@
         "type": "switch",
         "default": true,
         "description": "Enable Edge Fade [ Left & Right ]"
+    },
+
+    "randomise": {
+        "type": "checkbox",
+        "default": true,
+        "description": "Randomise Headlines"
     },
 
     "fontFamily": {
@@ -299,7 +299,7 @@
         "min": 5,
         "max": 100,
         "step": 1,
-        "description": "Maximum Reddit Post to Display [ 5 - 20 ]"
+        "description": "Maximum Posts to Display [ 5 - 20 ]"
     },
 
     "redditRefreshInterval": {
@@ -314,16 +314,16 @@
     "showRedditSource": {
         "type": "checkbox",
         "default": false,
-        "description": "Show Subreddit Source"
+        "description": "Show Post Source"
     },
 
     "showRedditIcons": {
-        "type": "switch",
-        "default": true,
+        "type": "checkbox",
+        "default": false,
         "description": "Show Reddit Icon"
     },
 
-    "AllowNSFW": {
+    "allowNSFW": {
         "type": "checkbox",
         "default": false,
         "description": "Show NSFW Posts"

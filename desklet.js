@@ -1236,34 +1236,29 @@ class RSSDesklet extends Desklet.Desklet {
             vertical: false
         });
 
-        // =====================================
-        // FAVICON
-        // =====================================
+        const source = this._extractSource(headline.link || "");
+        const isReddit = headline.source === "reddit";
 
-        const isReddit = /reddit\.com/i.test(headline.link || "");
+        const icon = this._getIconForHeadline(headline);
 
-        if (this.showFavicons) {
-
-            // Only show Reddit icons if enabled
-            if (!isReddit || this.showRedditIcons) {
-
-                if (headline.domain) {
-
-                    const icon = this._createFavicon(headline.domain);
-
-                    if (icon)
-                        row.add_actor(icon);
-                }
-            }
-        }
+        if (icon)
+            row.add_actor(icon);
 
         // =====================================
         // HEADLINE LABEL
         // =====================================
 
-        const label = this._createLabel(
-            headline.title || ""
+        const rawTitle = headline.title || "";
+
+        const cleanTitle = rawTitle.replace(/^【.*?】\s*/, "");
+
+        const formattedTitle = this._formatHeadline(
+            source,
+            cleanTitle,
+            isReddit
         );
+
+        const label = this._createLabel(formattedTitle);
 
         row.add_actor(label);
 
@@ -1332,6 +1327,38 @@ class RSSDesklet extends Desklet.Desklet {
         );
 
         return btn;
+    }
+
+    _getIconForHeadline(headline) {
+
+        const isReddit = headline.source === "reddit";
+
+        // -------------------------
+        // RSS ICONS
+        // -------------------------
+        if (!isReddit) {
+
+            if (!this.showFavicons)
+                return null;
+
+            if (!headline.domain)
+                return null;
+
+            return this._createFavicon(headline.domain);
+        }
+
+        // -------------------------
+        // REDDIT ICONS
+        // -------------------------
+        if (isReddit) {
+
+            if (!this.showRedditIcons)
+                return null;
+
+            return this._createFavicon("reddit.com");
+        }
+
+        return null;
     }
 
     _createFavicon(domain) {
@@ -1556,11 +1583,6 @@ _getFeedList() {
         const feeds =
             this._getFeedList();
 
-            global.log(
-                "[RSSDesklet] Reddit feeds = " +
-                JSON.stringify(this._getRedditFeedList())
-            );
-
         // ----------------------------------
         // No feeds configured
         // ----------------------------------
@@ -1610,10 +1632,6 @@ _getFeedList() {
             done: false
         };
 
-        global.log(
-            `[RSSDesklet] Fetch Start #${fetchId} (${feeds.length} feeds)`
-        );
-
         // ----------------------------------
         // Fetch feeds
         // ----------------------------------
@@ -1627,11 +1645,6 @@ _getFeedList() {
 
                 if (!stdout) {
 
-                    global.log(
-                        "[RSSDesklet] FAILED: " +
-                        feedURL
-                    );
-
                 } else {
 
                     try {
@@ -1641,14 +1654,6 @@ _getFeedList() {
                                 stdout,
                                 feedURL
                             );
-
-                        global.log(
-                            `[RSSDesklet] ${
-                                isReddit ? "Reddit" : "RSS"
-                            } Parsed ${
-                                items.length
-                            } items from ${feedURL}`
-                        );
 
                         if (isReddit)
                             state.redditAll.push(...items);
@@ -1662,10 +1667,6 @@ _getFeedList() {
                 }
 
                 state.pending--;
-
-                    // ----------------------------------
-                    // Finished?
-                    // ----------------------------------
 
                     if (
                         state.pending === 0 &&
@@ -1746,7 +1747,7 @@ _getFeedList() {
                 this._fetchFavicon(domain);
 
             items.push({
-                title: displayTitle,
+                title: cleanTitle,
                 link: cleanLink,
                 domain,
                 source: isReddit ? "reddit" : "rss"
@@ -1945,10 +1946,6 @@ _getFeedList() {
 
     _finalizeHeadlines(rssHeadlines = [], redditHeadlines = []) {
 
-        global.log(
-            `[RSSDesklet] FINALIZE RSS=${rssHeadlines.length} Reddit=${redditHeadlines.length}`
-        );
-
         const dedupe = (arr) => {
             const seen = {};
             return arr.filter(h => {
@@ -1984,8 +1981,7 @@ _getFeedList() {
 
         if (redditClean.length > 0) {
 
-            this._lastGoodRedditHeadlines =
-                [...redditClean];
+            this._lastGoodRedditHeadlines = [...redditClean];
 
         } else if (
             this._lastGoodRedditHeadlines &&
@@ -1996,8 +1992,14 @@ _getFeedList() {
                 "[RSSDesklet] Using cached Reddit headlines"
             );
 
-            redditClean =
-                [...this._lastGoodRedditHeadlines];
+            redditClean = dedupe(this._lastGoodRedditHeadlines.map(h => ({
+                ...h,
+                title: this._formatHeadline(
+                    this._extractSource(h.link || ""),
+                    h.title,
+                    true
+                )
+            })));
         }
 
         const rssMax =
@@ -2013,6 +2015,39 @@ _getFeedList() {
             shuffle([...redditClean]).slice(0, redditMax);
 
         const merged = shuffle([...finalRSS, ...finalReddit]);
+
+        if (
+            rssClean.length === 0 &&
+            redditClean.length === 0
+        ) {
+
+            const cache =
+                this._readJSON(this._getCacheFile());
+
+            if (
+                cache &&
+                Array.isArray(cache.headlines) &&
+                cache.headlines.length > 0
+            ) {
+
+                global.log(
+                    "[RSSDesklet] Using disk cached headlines"
+                );
+
+                this.usingCachedData = true;
+                this._updateCacheIndicator();
+
+                this.lastHeadlines = cache.headlines;
+
+                this._rebuildTickerActors(
+                    cache.headlines
+                );
+
+                this._buildingFeeds = false;
+
+                return;
+            }
+        }
 
         if (merged.length === 0) {
             this._destroyChildrenSafely(this.tickerBox1);
@@ -2665,7 +2700,18 @@ _getFeedList() {
             return false;
 
         if (Array.isArray(cache.headlines)) {
+
             this.lastHeadlines = cache.headlines;
+
+            this._lastGoodRSSHeadlines =
+                cache.headlines.filter(
+                    h => h.source === "rss"
+                );
+
+            this._lastGoodRedditHeadlines =
+                cache.headlines.filter(
+                    h => h.source === "reddit"
+                );
         }
 
         if (Array.isArray(cache.cryptoData)) {

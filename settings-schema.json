@@ -58,6 +58,7 @@
     "sectionNews": {
       "type": "section",
       "title": "News Settings",
+      "dependency": "showRSS",
       "keys": [
         "maxHeadlines",
         "refreshInterval",
@@ -80,6 +81,7 @@
     "sectionReddit": {
       "type": "section",
       "title": "Reddit Settings",
+      "dependency": "enableReddit",
       "keys": [
         "maxRedditHeadlines",
         "redditRefreshInterval",
@@ -152,31 +154,15 @@
     "feedURLs": {
         "type": "textview",
         "default": "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
-        "description": "News RSS Feed URLs [ One Feed Per Line ]"
+        "description": "News RSS Feed URLs [ One Feed Per Line ]",
+        "dependency": "showRSS"
     },
 
     "updateRSS": {
         "type": "button",
         "description": "Update News Feed",
-        "callback": "onFeedsUpdatePressed"
-    },
-
-    "deskletWidth": {
-        "type": "spinbutton",
-        "default": 800,
-        "min": 200,
-        "max": 5000,
-        "step": 10,
-        "description": "Ticker Width [ px ]"
-    },
-
-    "deskletHeight": {
-        "type": "spinbutton",
-        "default": 10,
-        "min": 5,
-        "max": 50,
-        "step": 1,
-        "description": "Ticker Height [ px ]"
+        "callback": "onFeedsUpdatePressed",
+        "dependency": "showRSS"
     },
 
     "maxHeadlines": {
@@ -188,14 +174,13 @@
         "description": "Maximum Headlines to Display [ 5 - 20 ]"
     },
 
-    "speed": {
-        "type": "scale",
-        "default": 3,
+    "refreshInterval": {
+        "type": "spinbutton",
+        "default": 10,
         "min": 1,
-        "max": 10,
+        "max": 120,
         "step": 1,
-        "show-value": true,
-        "description": "Scroll Speed"
+        "description": "Refresh Interval [ Minutes ]"
     },
 
     "showSource": {
@@ -210,69 +195,10 @@
         "description": "Show Feed Source Icon"
     },
 
-    "refreshInterval": {
-        "type": "spinbutton",
-        "default": 10,
-        "min": 1,
-        "max": 120,
-        "step": 1,
-        "description": "Refresh Interval [ Minutes ]"
-    },
-
-    "enableFade": {
-        "type": "switch",
-        "default": true,
-        "description": "Enable Edge Fade [ Left & Right ]"
-    },
-
     "randomise": {
         "type": "checkbox",
         "default": true,
         "description": "Randomise Headlines"
-    },
-
-    "fontFamily": {
-        "type": "fontchooser",
-        "default": "Sans Regular 14",
-        "description": "Font Family"
-    },
-
-    "fontColor": {
-        "type": "colorchooser",
-        "default": "rgb(255,255,255)",
-        "description": "Font Colour"
-    },
-
-    "textOpacity": {
-        "type": "scale",
-        "default": 1.0,
-        "min": 0.2,
-        "max": 1.0,
-        "step": 0.05,
-        "show-value": true,
-        "description": "Text Opacity [ % ]"
-    },
-
-    "backgroundColor": {
-        "type": "colorchooser",
-        "default": "rgb(0,0,0)",
-        "description": "Background Colour"
-    },
-
-    "backgroundOpacity": {
-        "type": "scale",
-        "default": 0.5,
-        "min": 0.0,
-        "max": 1.0,
-        "step": 0.05,
-        "show-value": true,
-        "description": "Background Opacity [ % ]"
-    },
-
-    "scrollReverse": {
-        "type": "switch",
-        "default": false,
-        "description": "Reverse Ticker Scrolling"
     },
 
     "enableReddit": {
@@ -284,13 +210,15 @@
     "redditFeeds": {
         "type": "textview",
         "default": "all",
-        "description": "Subreddit's [ One Per Line ]"
+        "description": "Subreddit's [ One Per Line ]",
+        "dependency": "enableReddit"
     },
 
     "updateReddit": {
         "type": "button",
         "description": "Update Reddit Feed",
-        "callback": "onFeedsUpdatePressed"
+        "callback": "onFeedsUpdatePressed",
+        "dependency": "enableReddit"
     },
 
     "maxRedditHeadlines": {
@@ -345,7 +273,8 @@
     "cryptoSymbols": {
         "type": "textview",
         "default": "bitcoin\nethereum\nsolana\nripple",
-        "description": "CoinGecko Token IDs [ One Per Line ]"
+        "description": "CoinGecko Token IDs [ One Per Line ]",
+        "dependency": "showCrypto"
     },
 
     "cryptoRefreshInterval": {
@@ -354,19 +283,22 @@
         "min": 1,
         "max": 10,
         "step": 1,
-        "description": "Refresh Interval [ Minutes ]"
+        "description": "Refresh Interval [ Minutes ]",
+        "dependency": "showCrypto"
     },
 
     "cryptoCurrency": {
         "type": "entry",
         "default": "usd",
-        "description": "Fiat Currency"
+        "description": "Fiat Currency",
+        "dependency": "showCrypto"
     },
 
     "updateCrypto": {
         "type": "button",
         "description": "Update Crypto Feed",
-        "callback": "onCryptoUpdatePressed"
+        "callback": "onCryptoUpdatePressed",
+        "dependency": "showCrypto"
     },
 
     "copyBTC": {
@@ -379,6 +311,84 @@
         "type": "button",
         "description": "Ethereum : 0xe1cA43145846fb476FED56645FCbA0B9B55be79B",
         "callback": "on_copy_ETH"
-    } 
+    },
+
+    "deskletWidth": {
+        "type": "spinbutton",
+        "default": 800,
+        "min": 200,
+        "max": 5000,
+        "step": 10,
+        "description": "Ticker Width [ px ]"
+    },
+
+    "deskletHeight": {
+        "type": "spinbutton",
+        "default": 10,
+        "min": 5,
+        "max": 50,
+        "step": 1,
+        "description": "Ticker Height [ px ]"
+    },
+
+    "scrollReverse": {
+        "type": "switch",
+        "default": false,
+        "description": "Reverse Ticker Scrolling"
+    },
+
+    "enableFade": {
+        "type": "switch",
+        "default": true,
+        "description": "Enable Edge Fade [ Left & Right ]"
+    },
+
+    "speed": {
+        "type": "scale",
+        "default": 3,
+        "min": 1,
+        "max": 10,
+        "step": 1,
+        "show-value": true,
+        "description": "Scroll Speed"
+    },
+
+    "fontFamily": {
+        "type": "fontchooser",
+        "default": "Sans Regular 14",
+        "description": "Font Family"
+    },
+
+    "fontColor": {
+        "type": "colorchooser",
+        "default": "rgb(255,255,255)",
+        "description": "Font Colour"
+    },
+
+    "textOpacity": {
+        "type": "scale",
+        "default": 1.0,
+        "min": 0.2,
+        "max": 1.0,
+        "step": 0.05,
+        "show-value": true,
+        "description": "Text Opacity [ % ]"
+    },
+
+    "backgroundColor": {
+        "type": "colorchooser",
+        "default": "rgb(0,0,0)",
+        "description": "Background Colour"
+    },
+
+    "backgroundOpacity": {
+        "type": "scale",
+        "default": 0.5,
+        "min": 0.0,
+        "max": 1.0,
+        "step": 0.05,
+        "show-value": true,
+        "description": "Background Opacity [ % ]"
+    }
 }
 

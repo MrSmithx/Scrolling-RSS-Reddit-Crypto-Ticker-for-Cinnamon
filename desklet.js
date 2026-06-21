@@ -234,10 +234,6 @@ class RSSDesklet extends Desklet.Desklet {
             () => Clutter.EVENT_PROPAGATE
         );
 
-        // =====================================
-        // RIGHT CLICK MENU
-        // =====================================
-
         this.container.reactive = true;
 
         this.container.connect(
@@ -250,6 +246,73 @@ class RSSDesklet extends Desklet.Desklet {
 
                     return Clutter.EVENT_STOP;
                 }
+
+                return Clutter.EVENT_PROPAGATE;
+            }
+        );
+
+        this.headlineButton.connect(
+            "scroll-event",
+            (actor, event) => {
+
+                const dir = event.get_scroll_direction();
+
+                if (dir === Clutter.ScrollDirection.UP)
+                    this.offset -= 50;
+
+                else if (dir === Clutter.ScrollDirection.DOWN)
+                    this.offset += 50;
+
+                this._updateTickerPosition();
+
+                return Clutter.EVENT_STOP;
+            }
+        );
+
+        this._dragging = false;
+
+        this.headlineButton.connect(
+            "button-press-event",
+            (actor, event) => {
+
+                if (event.get_button() !== 1)
+                    return Clutter.EVENT_PROPAGATE;
+
+                this._dragging = true;
+
+                const [x] = event.get_coords();
+
+                this._dragStartX = x;
+                this._dragStartOffset = this.offset;
+
+                return Clutter.EVENT_STOP;
+            }
+        );
+
+        this.headlineButton.connect(
+            "motion-event",
+            (actor, event) => {
+
+                if (!this._dragging)
+                    return Clutter.EVENT_PROPAGATE;
+
+                const [x] = event.get_coords();
+
+                this.offset =
+                    this._dragStartOffset -
+                    (x - this._dragStartX);
+
+                this._updateTickerPosition();
+
+                return Clutter.EVENT_STOP;
+            }
+        );
+
+        this.headlineButton.connect(
+            "button-release-event",
+            () => {
+
+                this._dragging = false;
 
                 return Clutter.EVENT_PROPAGATE;
             }
@@ -290,6 +353,30 @@ class RSSDesklet extends Desklet.Desklet {
     // ==================================================
     // HELPERS
     // ==================================================
+
+    _updateTickerPosition() {
+
+        const width1 = this.tickerWidth || 0;
+
+        if (width1 <= 0)
+            return;
+
+        while (this.offset < 0)
+            this.offset += width1;
+
+        while (this.offset >= width1)
+            this.offset -= width1;
+
+        this.tickerBox1.set_position(
+            -this.offset,
+            0
+        );
+
+        this.tickerClone.set_position(
+            width1 - this.offset,
+            0
+        );
+    }
 
     _updateCacheIndicator() {
 
@@ -2579,15 +2666,7 @@ _getFeedList() {
                         this.offset += width1;
                 }
 
-                this.tickerBox1.set_position(
-                    -this.offset,
-                    0
-                );
-
-                this.tickerClone.set_position(
-                    width1 - this.offset,
-                    0
-                );
+                this._updateTickerPosition();
 
                 return true;
             }

@@ -1527,34 +1527,34 @@ class RSSDesklet extends Desklet.Desklet {
         return symbols[currency] || currency.toUpperCase() + " ";
     }
 
-_getFeedList() {
+    _getFeedList() {
 
-    let feeds = [];
+        let feeds = [];
 
-    if (
-        this.showRSS &&
-        this.feedURLs
-    ) {
-
-        const rssFeeds =
+        if (
+            this.showRSS &&
             this.feedURLs
-                .split("\n")
-                .map(u => u.trim())
-                .filter(u => u.length > 0);
+        ) {
 
-        feeds = feeds.concat(rssFeeds);
+            const rssFeeds =
+                this.feedURLs
+                    .split("\n")
+                    .map(u => u.trim())
+                    .filter(u => u.length > 0);
+
+            feeds = feeds.concat(rssFeeds);
+        }
+
+        if (this.enableReddit) {
+
+            const redditFeeds =
+                this._getRedditFeedList();
+
+            feeds = feeds.concat(redditFeeds);
+        }
+
+        return feeds;
     }
-
-    if (this.enableReddit) {
-
-        const redditFeeds =
-            this._getRedditFeedList();
-
-        feeds = feeds.concat(redditFeeds);
-    }
-
-    return feeds;
-}
 
     _hasNewsFeeds() {
 
@@ -1621,6 +1621,9 @@ _getFeedList() {
     }
 
     _reload() {
+
+        if (!this.enableReddit)
+            this._lastGoodRedditHeadlines = [];
 
         if (this._reloadTimer)
             Mainloop.source_remove(this._reloadTimer);
@@ -2066,27 +2069,29 @@ _getFeedList() {
         let redditClean =
             dedupe(redditHeadlines);
 
-        if (redditClean.length > 0) {
+        if (redditEnabled) {
 
-            this._lastGoodRedditHeadlines = [...redditClean];
+            if (redditClean.length > 0) {
 
-        } else if (
-            this._lastGoodRedditHeadlines &&
-            this._lastGoodRedditHeadlines.length > 0
-        ) {
+                this._lastGoodRedditHeadlines =
+                    [...redditClean];
 
-            global.log(
-                "[RSSDesklet] Using cached Reddit headlines"
-            );
+            } else if (
+                this._lastGoodRedditHeadlines &&
+                this._lastGoodRedditHeadlines.length > 0
+            ) {
 
-            redditClean = dedupe(this._lastGoodRedditHeadlines.map(h => ({
-                ...h,
-                title: this._formatHeadline(
-                    this._extractSource(h.link || ""),
-                    h.title,
-                    true
-                )
-            })));
+                global.log(
+                    "[RSSDesklet] Using cached Reddit headlines"
+                );
+
+                redditClean =
+                    [...this._lastGoodRedditHeadlines];
+            }
+
+        } else {
+
+            redditClean = [];
         }
 
         const rssMax =
@@ -2124,10 +2129,19 @@ _getFeedList() {
                 this.usingCachedData = true;
                 this._updateCacheIndicator();
 
-                this.lastHeadlines = cache.headlines;
+                const filteredCache =
+                    cache.headlines.filter(h => {
+
+                        if (h.source === "reddit")
+                            return redditEnabled;
+
+                        return rssEnabled;
+                    });
+
+                this.lastHeadlines = filteredCache;
 
                 this._rebuildTickerActors(
-                    cache.headlines
+                    filteredCache
                 );
 
                 this._buildingFeeds = false;
@@ -2135,6 +2149,10 @@ _getFeedList() {
                 return;
             }
         }
+
+        global.log(
+            `[RSSDesklet] rssEnabled=${rssEnabled} redditEnabled=${redditEnabled} rssClean=${rssClean.length} redditClean=${redditClean.length}`
+        );
 
         if (merged.length === 0) {
             this._destroyChildrenSafely(this.tickerBox1);

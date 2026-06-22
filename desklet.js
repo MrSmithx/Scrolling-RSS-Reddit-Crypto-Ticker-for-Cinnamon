@@ -91,11 +91,6 @@ class RSSDesklet extends Desklet.Desklet {
         this._bindSetting("feedURLs");
         this._bindSetting("redditFeeds");
 
-        /*this.showRSS = true;
-        this.enableReddit = true;
-        this.feedURLs = this.feedURLs || "";
-        this.redditFeeds = this.redditFeeds || "";*/
-
     }
 
     _initNetworking() {
@@ -269,55 +264,6 @@ class RSSDesklet extends Desklet.Desklet {
                 return Clutter.EVENT_STOP;
             }
         );
-
-        /*this._dragging = false;
-
-        this.headlineButton.connect(
-            "button-press-event",
-            (actor, event) => {
-
-                if (event.get_button() !== 1)
-                    return Clutter.EVENT_PROPAGATE;
-
-                this._dragging = true;
-
-                const [x] = event.get_coords();
-
-                this._dragStartX = x;
-                this._dragStartOffset = this.offset;
-
-                return Clutter.EVENT_PROPAGATE;
-            }
-        );
-
-        this.headlineButton.connect(
-            "motion-event",
-            (actor, event) => {
-
-                if (!this._dragging)
-                    return Clutter.EVENT_PROPAGATE;
-
-                const [x] = event.get_coords();
-
-                this.offset =
-                    this._dragStartOffset -
-                    (x - this._dragStartX);
-
-                this._updateTickerPosition();
-
-                return Clutter.EVENT_PROPAGATE;
-            }
-        );
-
-        this.headlineButton.connect(
-            "button-release-event",
-            () => {
-
-                this._dragging = false;
-
-                return Clutter.EVENT_PROPAGATE;
-            }
-        );*/
     }
 
     _startServices() {

@@ -99,6 +99,7 @@
         "showCrypto",
         "cryptoSymbols",
         "cryptoRefreshInterval",
+        "showCryptoIcons",
         "cryptoCurrency",
         "updateCrypto"
       ]
@@ -284,6 +285,13 @@
         "max": 10,
         "step": 1,
         "description": "Refresh Interval [ Minutes ]",
+        "dependency": "showCrypto"
+    },
+
+    "showCryptoIcons": {
+        "type": "checkbox",
+        "default": false,
+        "description": "Show Crypto Icon",
         "dependency": "showCrypto"
     },
 

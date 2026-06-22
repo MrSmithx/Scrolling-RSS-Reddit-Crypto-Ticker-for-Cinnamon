@@ -140,28 +140,13 @@ If feeds become unavailable:
 
 ### RSS Settings
 
-| Setting       | Description                   |
-| ------------- | ----------------------------- |
-| Show RSS      | Enable RSS feeds              |
-| Feed URLs     | One URL per line              |
-| Max Headlines | Maximum RSS headlines         |
-| Show Source   | Display source names          |
-| Randomise     | Randomise headline order      |
-| Show Favicons | Download and display favicons |
+<img width="800" height="777" alt="RSS Settings" src="https://github.com/user-attachments/assets/5f696338-f005-437d-9659-0922b5d83b4a" />
 
 ---
 
 ### Reddit Settings
 
-| Setting              | Description              |
-| -------------------- | ------------------------ |
-| Enable Reddit        | Enable Reddit feeds      |
-| Reddit Feeds         | One subreddit per line   |
-| Reddit Sort          | Hot / New / Top / Rising |
-| Max Reddit Headlines | Maximum Reddit items     |
-| Show Reddit Source   | Display subreddit names  |
-| Show Reddit Icons    | Display Reddit icon      |
-| Allow NSFW           | Include NSFW posts       |
+<img width="800" height="777" alt="Reddit Settings" src="https://github.com/user-attachments/assets/6daa32a4-a0a9-47c7-8846-cd36b9e1e9af" />
 
 Example:
 
@@ -176,13 +161,7 @@ cinnamon
 
 ### Cryptocurrency Settings
 
-| Setting           | Description          |
-| ----------------- | -------------------- |
-| Show Crypto       | Enable crypto ticker |
-| Crypto Symbols    | Coins to track       |
-| Crypto Currency   | Fiat currency        |
-| Show Crypto Icons | Display logos        |
-| Refresh Interval  | Refresh pricing data |
+<img width="800" height="777" alt="Crypto Settings" src="https://github.com/user-attachments/assets/9e71617e-781f-480b-9380-8c2d1b257cd8" />
 
 Example:
 
@@ -196,16 +175,7 @@ solana
 
 ### Appearance Settings
 
-| Setting            | Description             |
-| ------------------ | ----------------------- |
-| Width              | Desklet width           |
-| Height             | Desklet padding         |
-| Font Family        | Custom font             |
-| Font Color         | Text colour             |
-| Text Opacity       | Text transparency       |
-| Background Color   | Background colour       |
-| Background Opacity | Background transparency |
-| Enable Fade        | Edge fade effect        |
+<img width="800" height="777" alt="Appearance" src="https://github.com/user-attachments/assets/74676446-2184-480b-b331-2c67fa694fe1" />
 
 ---
 

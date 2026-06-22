@@ -621,6 +621,17 @@ class RSSDesklet extends Desklet.Desklet {
         return arr;
     }
 
+    _getCacheDir() {
+        let dir = GLib.build_filenamev([
+            GLib.get_user_cache_dir(),
+            "rss-desklet"
+        ]);
+
+        GLib.mkdir_with_parents(dir, 0o755);
+
+        return dir;
+    }
+
     // CONTEXT MENU
 
     _buildMenuItem(label, icon, callback) {
@@ -1515,7 +1526,7 @@ class RSSDesklet extends Desklet.Desklet {
     _getFaviconDir() {
 
         let dir = GLib.build_filenamev([
-            GLib.get_user_cache_dir(),
+            this._getCacheDir(),
             "rss-desklet-icons"
         ]);
 
@@ -2491,8 +2502,8 @@ _parseCrypto(data, currency) {
     _getCryptoIconDir() {
 
         let dir = GLib.build_filenamev([
-            GLib.get_user_cache_dir(),
-            "rss-desklet-crypto-icons"
+            this._getCacheDir(),
+            "rss-desklet-icons"
         ]);
 
         GLib.mkdir_with_parents(dir, 0o755);
@@ -2758,7 +2769,7 @@ _parseCrypto(data, currency) {
     _getCoinListCacheFile() {
 
         return GLib.build_filenamev([
-            GLib.get_user_cache_dir(),
+            this._getCacheDir(),
             "rss-desklet-coins.json"
         ]);
     }
@@ -2844,7 +2855,7 @@ _parseCrypto(data, currency) {
     _getCacheFile() {
 
         return GLib.build_filenamev([
-            GLib.get_user_cache_dir(),
+            this._getCacheDir(),
             "rss-desklet-cache.json"
         ]);
     }

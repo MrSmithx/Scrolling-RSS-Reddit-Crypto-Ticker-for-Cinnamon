@@ -4,7 +4,7 @@ A highly configurable Cinnamon Desklet that combines **RSS feeds**, **Reddit fee
 
 Designed for Linux Mint Cinnamon desktops, this desklet provides a lightweight information dashboard with caching, offline support, favicons, crypto icons, custom styling, and automatic refresh services.
 
-<img width="1920" height="1080" alt="ScreenShot" src="https://github.com/user-attachments/assets/812f9fdc-33ef-4ce9-9c44-b3c197e6efb0" />
+<img width="1920" height="1080" alt="Screenshot" src="https://github.com/user-attachments/assets/3672ad8b-3cd2-4b2f-b586-fd46d94c0a92" />
 
 ---
 

@@ -56,6 +56,7 @@ class RSSDesklet extends Desklet.Desklet {
             "showSource",
             "randomise",
             "showFavicons",
+            "headlineMaxLength",
             "enableReddit",
             "maxRedditHeadlines",
             "showRedditSource",
@@ -419,6 +420,20 @@ class RSSDesklet extends Desklet.Desklet {
         sep.y_align = Clutter.ActorAlign.CENTER;
 
         return sep;
+    }
+
+    _truncateHeadline(text) {
+
+        const max =
+            parseInt(this.headlineMaxLength) || 0;
+
+        if (max <= 0)
+            return text;
+
+        if (!text || text.length <= max)
+            return text;
+
+        return text.substring(0, max - 1) + "…";
     }
 
     _createBox(props = {}) {
@@ -1296,13 +1311,18 @@ class RSSDesklet extends Desklet.Desklet {
 
         const rawTitle = headline.title || "";
 
-        const cleanTitle = rawTitle.replace(/^【.*?】\s*/, "");
+        const cleanTitle =
+            rawTitle.replace(/^【.*?】\s*/, "");
 
-        const formattedTitle = this._formatHeadline(
-            source,
-            cleanTitle,
-            isReddit
-        );
+        const truncatedTitle =
+            this._truncateHeadline(cleanTitle);
+
+        const formattedTitle =
+            this._formatHeadline(
+                source,
+                truncatedTitle,
+                isReddit
+            );
 
         const label = this._createLabel(formattedTitle);
 

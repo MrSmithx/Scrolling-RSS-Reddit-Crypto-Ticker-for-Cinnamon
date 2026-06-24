@@ -1,7 +1,7 @@
 {
     "uuid": "rssTicker@martyn",
     "name": "Scrolling RSS, Reddit & Crypto Ticker",
-    "description": "Scrolling RSS, Reddit & Crypto Ticker for Cinnamon",
+    "description": "Scrolling RSS, Reddit & Crypto Ticker for Cinnamon\n\nhttps://github.com/MrSmithx/Scrolling-RSS-Reddit-Crypto-Ticker-for-Cinnamon",
     "version": "1.0",
     "max-instances": 5
 }

@@ -39,7 +39,6 @@ class RSSDesklet extends Desklet.Desklet {
 
         if (this._updateDecoration)
             this._updateDecoration();
-
     }
 
     _initSettings(metadata, deskletId) {
@@ -91,7 +90,6 @@ class RSSDesklet extends Desklet.Desklet {
         this._bindSetting("cryptoCurrency");
         this._bindSetting("feedURLs");
         this._bindSetting("redditFeeds");
-
     }
 
     _initNetworking() {
@@ -103,7 +101,6 @@ class RSSDesklet extends Desklet.Desklet {
         this._httpSession.timeout = 10;
 
         this._cancellable = new Gio.Cancellable();
-
     }
 
     _initState() {
@@ -125,7 +122,6 @@ class RSSDesklet extends Desklet.Desklet {
         this.cryptoSymbolMap = {};
 
         this.fadeWidth = 100;
-
     }
 
     _initUI() {
@@ -207,7 +203,6 @@ class RSSDesklet extends Desklet.Desklet {
         this.container.add_actor(this.headlineButton);
 
         this.setContent(this.container);
-
     }
 
     _initEvents() {
@@ -284,7 +279,6 @@ class RSSDesklet extends Desklet.Desklet {
         this._startRefresh();
 
         this._applyStyle();
-
     }
 
     _bindSetting(key, callback) {
@@ -298,7 +292,7 @@ class RSSDesklet extends Desklet.Desklet {
         );
     }
 
-    // HELPERS
+    // --UI HELPERS
 
     _updateTickerPosition() {
 
@@ -347,6 +341,8 @@ class RSSDesklet extends Desklet.Desklet {
             this.lastRefreshTime.toLocaleString();
     }
 
+    // --ACTOR / WIDGET HELPERS
+
     _setNoExpand(actor) {
 
         actor.x_expand = false;
@@ -369,73 +365,6 @@ class RSSDesklet extends Desklet.Desklet {
         `);
     }
 
-    _parseRGB(color) {
-
-        const match = (color || "").match(
-            /rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/
-        );
-
-        if (!match) {
-            return { r: 0, g: 0, b: 0 };
-        }
-
-        return {
-            r: parseInt(match[1]),
-            g: parseInt(match[2]),
-            b: parseInt(match[3])
-        };
-    }
-
-    _clamp(value, min, max, fallback = min) {
-
-        value = parseFloat(value);
-
-        if (isNaN(value))
-            value = fallback;
-
-        return Math.min(max, Math.max(min, value));
-    }
-
-    _createSpacer(type = "space") {
-
-        let text = "";
-        let opacity = 0.0;
-        let padding = "5px";
-
-        if (type === "sep") {
-            text = "•";
-            padding = "15px";
-        }
-
-        const sep = this._createLabel(
-            text,
-            this.fontColor,
-            `
-                padding-left: ${padding};
-                padding-right: ${padding};
-                opacity: ${opacity};
-            `
-        );
-
-        sep.y_align = Clutter.ActorAlign.CENTER;
-
-        return sep;
-    }
-
-    _truncateHeadline(text) {
-
-        const max =
-            parseInt(this.headlineMaxLength) || 0;
-
-        if (max <= 0)
-            return text;
-
-        if (!text || text.length <= max)
-            return text;
-
-        return text.substring(0, max - 1) + "…";
-    }
-
     _createBox(props = {}) {
 
         return new St.BoxLayout({
@@ -453,6 +382,16 @@ class RSSDesklet extends Desklet.Desklet {
             ...props
         });
     }
+
+    _shuffle(arr) {
+        for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        return arr;
+    }
+
+    // --LABELS & TEXT
 
     _getFontParts() {
 
@@ -514,6 +453,104 @@ class RSSDesklet extends Desklet.Desklet {
         return label;
     }
 
+    _truncateHeadline(text) {
+
+        const max =
+            parseInt(this.headlineMaxLength) || 0;
+
+        if (
+            max <= 0 ||
+            !text ||
+            text.length <= max
+        ) {
+            return text;
+        }
+
+        // Leave room for ellipsis
+        const limit = max - 1;
+
+        let truncated =
+            text.substring(0, limit);
+
+        const lastSpace =
+            truncated.lastIndexOf(" ");
+
+        // Avoid returning only a tiny fragment
+        if (lastSpace > limit * 0.5) {
+
+            truncated =
+                truncated.substring(0, lastSpace);
+        }
+
+        return truncated.trimEnd() + "…";
+    }
+
+    _cleanText(text) {
+
+        if (!text)
+            return "";
+
+        text = text
+            .replace(/<!\[CDATA\[/g, "")
+            .replace(/\]\]>/g, "")
+            .replace(/<[^>]*>/g, "");
+
+        text = this._decodeEntities(text);
+
+        return text
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    _formatHeadline(source, title, isReddit = false) {
+
+        // REDDIT
+        if (isReddit) {
+
+            if (!this.showRedditSource)
+                return title;
+        }
+
+        // RSS
+        else {
+
+            if (!this.showSource)
+                return title;
+        }
+
+        return `【${source}】 ${title}`;
+    }
+
+    _decodeEntities(text) {
+
+        if (!text)
+            return "";
+
+        try {
+
+            const label = new St.Label();
+
+            // Wrap in harmless span
+            label.clutter_text.set_markup(
+                `<span>${text}</span>`
+            );
+
+            return label.clutter_text.text;
+
+        } catch (e) {
+
+            return text
+                .replace(/&amp;/g, "&")
+                .replace(/&quot;/g, "\"")
+                .replace(/&#39;/g, "'")
+                .replace(/&#x27;/gi, "'")
+                .replace(/&lt;/g, "<")
+                .replace(/&gt;/g, ">");
+        }
+    }
+
+    // --DATA & FILE HELPERS
+
     _readJSON(path) {
 
         try {
@@ -552,38 +589,45 @@ class RSSDesklet extends Desklet.Desklet {
         }
     }
 
-    _getRedditFeedList() {
+    _getCacheDir() {
+        let dir = GLib.build_filenamev([
+            GLib.get_user_cache_dir(),
+            "rss-desklet"
+        ]);
 
-        if (!this.enableReddit)
-            return [];
+        GLib.mkdir_with_parents(dir, 0o755);
 
-        const trimmed =
-            (this.redditFeeds || "").trim();
-
-        if (!trimmed)
-            return this._lastValidRedditFeeds || [];
-
-        const sort =
-            this.redditSort || "hot";
-
-        const feeds = trimmed
-            .split("\n")
-            .map(s => s.trim())
-            .filter(Boolean)
-            .map(sub =>
-                `https://www.reddit.com/r/${sub}/${sort}.rss`
-            );
-
-        this._lastValidRedditFeeds = feeds;
-
-        return feeds;
+        return dir;
     }
 
-    _extractOver18(itemXML) {
+    _clamp(value, min, max, fallback = min) {
 
-        return /<category[^>]+(?:term|label)=["'](?:over18|nsfw)["']/i
-            .test(itemXML);
+        value = parseFloat(value);
+
+        if (isNaN(value))
+            value = fallback;
+
+        return Math.min(max, Math.max(min, value));
     }
+
+    _parseRGB(color) {
+
+        const match = (color || "").match(
+            /rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/
+        );
+
+        if (!match) {
+            return { r: 0, g: 0, b: 0 };
+        }
+
+        return {
+            r: parseInt(match[1]),
+            g: parseInt(match[2]),
+            b: parseInt(match[3])
+        };
+    }
+
+    // --TIMER / LOOP MANAGEMENT
 
     _addLoop(name, interval, callback, seconds = false) {
 
@@ -628,26 +672,86 @@ class RSSDesklet extends Desklet.Desklet {
         this._loops = {};
     }
 
-    _shuffle(arr) {
-        for (let i = arr.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [arr[i], arr[j]] = [arr[j], arr[i]];
+    // --RSS / REDDIT HELPERS
+
+    _getFeedList() {
+
+        let feeds = [];
+
+        if (
+            this.showRSS &&
+            this.feedURLs
+        ) {
+
+            const rssFeeds =
+                this.feedURLs
+                    .split("\n")
+                    .map(u => u.trim())
+                    .filter(u => u.length > 0);
+
+            feeds = feeds.concat(rssFeeds);
         }
-        return arr;
+
+        if (this.enableReddit) {
+
+            const redditFeeds =
+                this._getRedditFeedList();
+
+            feeds = feeds.concat(redditFeeds);
+        }
+
+        return feeds;
     }
 
-    _getCacheDir() {
-        let dir = GLib.build_filenamev([
-            GLib.get_user_cache_dir(),
-            "rss-desklet"
-        ]);
+    _getRedditFeedList() {
 
-        GLib.mkdir_with_parents(dir, 0o755);
+        if (!this.enableReddit)
+            return [];
 
-        return dir;
+        const trimmed =
+            (this.redditFeeds || "").trim();
+
+        if (!trimmed)
+            return this._lastValidRedditFeeds || [];
+
+        const sort =
+            this.redditSort || "hot";
+
+        const feeds = trimmed
+            .split("\n")
+            .map(s => s.trim())
+            .filter(Boolean)
+            .map(sub =>
+                `https://www.reddit.com/r/${sub}/${sort}.rss`
+            );
+
+        this._lastValidRedditFeeds = feeds;
+
+        return feeds;
     }
 
-    // CONTEXT MENU
+    _hasNewsFeeds() {
+
+        const hasRSS =
+            this.showRSS &&
+            this.feedURLs &&
+            this.feedURLs.trim().length > 0;
+
+        const hasReddit =
+            this.enableReddit &&
+            this.redditFeeds &&
+            this.redditFeeds.trim().length > 0;
+
+        return hasRSS || hasReddit;
+    }
+
+    _extractOver18(itemXML) {
+
+        return /<category[^>]+(?:term|label)=["'](?:over18|nsfw)["']/i
+            .test(itemXML);
+    }
+
+    // --CONTEXT MENU
 
     _buildMenuItem(label, icon, callback) {
 
@@ -659,7 +763,6 @@ class RSSDesklet extends Desklet.Desklet {
 
         item.connect("activate", callback);
         return item;
-
     }
 
     _addContextMenu() {
@@ -676,10 +779,7 @@ class RSSDesklet extends Desklet.Desklet {
 
         this._menuManager.addMenu(this._menu);
 
-        // ---------------------------------
         // Refresh Feeds
-        // ---------------------------------
-
         const refreshItem =
             new PopupMenu.PopupIconMenuItem(
                 "Refresh All Feeds",
@@ -731,18 +831,12 @@ class RSSDesklet extends Desklet.Desklet {
             refreshAllItem
         );
 
-        // ---------------------------------
         // Separator
-        // ---------------------------------
-
         this._menu.addMenuItem(
             new PopupMenu.PopupSeparatorMenuItem()
         );
 
-        // ---------------------------------
         // Last Refresh Time
-        // ---------------------------------
-
         this.lastRefreshMenuItem =
             new PopupMenu.PopupMenuItem(
                 "Last Refresh: Never"
@@ -810,7 +904,7 @@ class RSSDesklet extends Desklet.Desklet {
             `${pad("Displayed",12)} RSS ${pad(stats.rssDisplayed || 0,5)} Reddit ${stats.redditDisplayed || 0}`;
     }
 
-    // STYLE
+    // --STYLING & LAYOUT
 
     _calculateDimensions() {
 
@@ -875,6 +969,32 @@ class RSSDesklet extends Desklet.Desklet {
         this._setNoExpand(this.headlineButton);
     }
 
+    _createSpacer(type = "space") {
+
+        let text = "";
+        let opacity = 0.0;
+        let padding = "5px";
+
+        if (type === "sep") {
+            text = "•";
+            padding = "15px";
+        }
+
+        const sep = this._createLabel(
+            text,
+            this.fontColor,
+            `
+                padding-left: ${padding};
+                padding-right: ${padding};
+                opacity: ${opacity};
+            `
+        );
+
+        sep.y_align = Clutter.ActorAlign.CENTER;
+
+        return sep;
+    }
+
     _applyViewportStyle() {
 
         if (!this.tickerViewport)
@@ -924,8 +1044,6 @@ class RSSDesklet extends Desklet.Desklet {
         const fadeRGBA =
             `rgba(${r}, ${g}, ${b}, ${bgOpacity})`;
 
-        // LEFT
-
         this.leftFade.set_style(`
             background-gradient-direction: horizontal;
             background-gradient-start: ${fadeRGBA};
@@ -941,8 +1059,6 @@ class RSSDesklet extends Desklet.Desklet {
         );
 
         this.leftFade.show();
-
-        // RIGHT
 
         this.rightFade.set_style(`
             background-gradient-direction: horizontal;
@@ -1053,7 +1169,7 @@ class RSSDesklet extends Desklet.Desklet {
         }
     }
 
-    // FEEDS
+    // --NETWORKING
 
     _request(url, callback) {
 
@@ -1141,6 +1257,8 @@ class RSSDesklet extends Desklet.Desklet {
         });
     }
 
+    // --TICKER BUILDING
+
     _rebuildFromScratch() {
 
         this.lastHeadlines = [];
@@ -1184,6 +1302,8 @@ class RSSDesklet extends Desklet.Desklet {
 
         targetBox.queue_relayout();
     }
+
+    // --CRYPTO TICKER UI
 
     _buildCryptoTicker(targetBox) {
 
@@ -1262,6 +1382,49 @@ class RSSDesklet extends Desklet.Desklet {
         return cryptoRow;
     }
 
+    _createCryptoIcon(id) {
+
+        const path =
+            this._getCryptoIconPath(id);
+
+        if (
+            !GLib.file_test(
+                path,
+                GLib.FileTest.EXISTS
+            )
+        ) {
+            return null;
+        }
+
+        try {
+
+            const file =
+                Gio.file_new_for_path(path);
+
+            const gicon =
+                Gio.FileIcon.new(file);
+
+            const icon =
+                new St.Icon({
+                    gicon,
+                    icon_size: this.fontParts.size
+                });
+
+            icon.set_style(`
+                margin-right: 8px;
+            `);
+
+            return icon;
+
+        } catch (e) {
+
+            global.logError(e);
+            return null;
+        }
+    }
+
+    // --NEWS TICKER UI
+
     _buildNewsTicker(headlines, targetBox) {
 
         if (
@@ -1282,7 +1445,6 @@ class RSSDesklet extends Desklet.Desklet {
                 this._createSpacer("sep")
             );
         }
-
     }
 
     _createNewsButton(headline) {
@@ -1307,8 +1469,6 @@ class RSSDesklet extends Desklet.Desklet {
         if (icon)
             row.add_actor(icon);
 
-        // HEADLINE LABEL
-
         const rawTitle = headline.title || "";
 
         const cleanTitle =
@@ -1327,8 +1487,6 @@ class RSSDesklet extends Desklet.Desklet {
         const label = this._createLabel(formattedTitle);
 
         row.add_actor(label);
-
-        // HOVER HANDLER
 
         // Save original style
         label._normalStyle = `
@@ -1460,88 +1618,7 @@ class RSSDesklet extends Desklet.Desklet {
         }
     }
 
-    _getCurrencySymbol(currency) {
-
-        const symbols = {
-            usd: "$",
-            aud: "A$",
-            cad: "C$",
-            eur: "€",
-            gbp: "£",
-            jpy: "¥",
-            cny: "¥",
-            inr: "₹",
-            krw: "₩",
-            rub: "₽",
-            chf: "CHF",
-            sek: "kr",
-            nok: "kr",
-            dkk: "kr",
-            nzd: "NZ$",
-            sgd: "S$",
-            hkd: "HK$",
-            brl: "R$",
-            mxn: "$",
-            zar: "R",
-            try: "₺",
-            aed: "د.إ",
-            pln: "zł",
-            thb: "฿",
-            idr: "Rp",
-            myr: "RM",
-            php: "₱",
-            vnd: "₫"
-        };
-
-        currency = (currency || "usd").toLowerCase();
-
-        return symbols[currency] || currency.toUpperCase() + " ";
-    }
-
-    _getFeedList() {
-
-        let feeds = [];
-
-        if (
-            this.showRSS &&
-            this.feedURLs
-        ) {
-
-            const rssFeeds =
-                this.feedURLs
-                    .split("\n")
-                    .map(u => u.trim())
-                    .filter(u => u.length > 0);
-
-            feeds = feeds.concat(rssFeeds);
-        }
-
-        if (this.enableReddit) {
-
-            const redditFeeds =
-                this._getRedditFeedList();
-
-            feeds = feeds.concat(redditFeeds);
-        }
-
-        return feeds;
-    }
-
-    _hasNewsFeeds() {
-
-        const hasRSS =
-            this.showRSS &&
-            this.feedURLs &&
-            this.feedURLs.trim().length > 0;
-
-        const hasReddit =
-            this.enableReddit &&
-            this.redditFeeds &&
-            this.redditFeeds.trim().length > 0;
-
-        return hasRSS || hasReddit;
-
-    }
+    // --FAVICON MANAGEMENT
 
     _getFaviconDir() {
 
@@ -1591,6 +1668,8 @@ class RSSDesklet extends Desklet.Desklet {
         this._downloadFile(url, path);
     }
 
+    // --RSS / REDDIT FETCHING
+
     _reload() {
 
         if (!this.enableReddit)
@@ -1621,10 +1700,7 @@ class RSSDesklet extends Desklet.Desklet {
 
     _fetchFeeds() {
 
-        // ----------------------------------
         // Prevent stale async refreshes
-        // ----------------------------------
-
         if (!this._feedFetchId)
             this._feedFetchId = 0;
 
@@ -1644,10 +1720,7 @@ class RSSDesklet extends Desklet.Desklet {
         const feeds =
             this._getFeedList();
 
-        // ----------------------------------
         // No feeds configured
-        // ----------------------------------
-
         if (!feeds.length) {
 
             if (fetchId !== this._feedFetchId)
@@ -1679,10 +1752,7 @@ class RSSDesklet extends Desklet.Desklet {
             return;
         }
 
-        // ----------------------------------
         // Fetch state
-        // ----------------------------------
-
         const state = {
 
             rssAll: [],
@@ -1693,10 +1763,7 @@ class RSSDesklet extends Desklet.Desklet {
             done: false
         };
 
-        // ----------------------------------
         // Fetch feeds
-        // ----------------------------------
-
         feeds.forEach(feedURL => {
 
             this._httpGet(feedURL, stdout => {
@@ -1754,243 +1821,6 @@ class RSSDesklet extends Desklet.Desklet {
                 }
             );
         });
-    }
-
-    _parseRSS(xml, feedURL) {
-
-        const items = [];
-
-        const source =
-            this._extractSource(feedURL);
-
-        const rssItems =
-            this._extractRSSItems(xml);
-
-        for (const itemXML of rssItems) {
-
-            const title =
-                this._extractTitle(itemXML);
-
-            const link =
-                this._extractLink(itemXML);
-
-            if (!title || !link)
-                continue;
-
-            const cleanTitle =
-                this._cleanText(title);
-
-            const cleanLink =
-                this._cleanText(link)
-                    .replace(/\s+/g, "");
-
-            const isNSFW =
-                this._extractOver18(itemXML);
-
-            if (isNSFW && !this.allowNSFW)
-                continue;
-
-            const isReddit =
-                feedURL.includes("/r/") &&
-                feedURL.includes("reddit");
-
-            const displayTitle =
-                this._formatHeadline(
-                    source,
-                    cleanTitle,
-                    isReddit
-                );
-
-            const domain =
-                this._getDomain(cleanLink);
-
-            if (this.showFavicons)
-                this._fetchFavicon(domain);
-
-            items.push({
-                title: cleanTitle,
-                link: cleanLink,
-                domain,
-                source: isReddit ? "reddit" : "rss"
-            });
-        }
-
-        const isReddit =
-            feedURL.includes("/r/") &&
-            feedURL.includes("reddit");
-
-        if (isReddit) {
-
-            const max =
-                this.maxRedditHeadlines || 10;
-
-            return items.slice(0, max);
-        }
-
-        return items;
-    }
-
-    _extractRSSItems(xml) {
-
-        let items = [];
-
-        // RSS 2.0 (BBC etc.)
-        const rssMatches = xml.match(/<item[\s\S]*?<\/item>/g);
-
-        if (rssMatches && rssMatches.length) {
-            return rssMatches;
-        }
-
-        // Atom (Reddit etc.)
-        const atomMatches = xml.match(/<entry[\s\S]*?<\/entry>/g);
-
-        if (atomMatches && atomMatches.length) {
-            return atomMatches;
-        }
-
-        return [];
-    }
-
-    _extractTitle(itemXML) {
-
-        // RSS
-        let match =
-            itemXML.match(
-                /<title>([\s\S]*?)<\/title>/i
-            );
-
-        // ATOM (Reddit)
-        if (!match) {
-
-            match =
-                itemXML.match(
-                    /<title[^>]*>([\s\S]*?)<\/title>/i
-                );
-        }
-
-        return match
-            ? match[1]
-            : null;
-
-    }
-
-    _extractLink(itemXML) {
-
-        // RSS LINK
-
-        let match =
-            itemXML.match(
-                /<link>([\s\S]*?)<\/link>/i
-            );
-
-        if (match)
-            return match[1];
-
-        // ATOM LINK
-
-        match =
-            itemXML.match(
-                /<link[^>]+href=["']([^"']+)["']/i
-            );
-
-        if (match)
-            return match[1];
-
-        // GUID FALLBACK
-
-        match =
-            itemXML.match(
-                /<guid[^>]*>([\s\S]*?)<\/guid>/i
-            );
-
-        return match
-            ? match[1]
-            : null;
-
-    }
-
-    _cleanText(text) {
-
-        if (!text)
-            return "";
-
-        text = text
-            .replace(/<!\[CDATA\[/g, "")
-            .replace(/\]\]>/g, "")
-            .replace(/<[^>]*>/g, "");
-
-        text = this._decodeEntities(text);
-
-        return text
-            .replace(/\s+/g, " ")
-            .trim();
-    }
-
-    _decodeEntities(text) {
-
-        if (!text)
-            return "";
-
-        try {
-
-            const label = new St.Label();
-
-            // Wrap in harmless span
-            label.clutter_text.set_markup(
-                `<span>${text}</span>`
-            );
-
-            return label.clutter_text.text;
-
-        } catch (e) {
-
-            return text
-                .replace(/&amp;/g, "&")
-                .replace(/&quot;/g, "\"")
-                .replace(/&#39;/g, "'")
-                .replace(/&#x27;/gi, "'")
-                .replace(/&lt;/g, "<")
-                .replace(/&gt;/g, ">");
-        }
-    }
-
-    _formatHeadline(source, title, isReddit = false) {
-
-        // REDDIT
-        if (isReddit) {
-
-            if (!this.showRedditSource)
-                return title;
-        }
-
-        // RSS
-        else {
-
-            if (!this.showSource)
-                return title;
-        }
-
-        return `【${source}】 ${title}`;
-    }
-
-    _extractSource(url) {
-
-        // Reddit special handling
-        const reddit =
-            url.match(/reddit\.com\/r\/([^\/]+)/i);
-
-        if (reddit)
-            return `r/${reddit[1]}`;
-
-        let m =
-            url.match(/https?:\/\/(?:www\.)?([^\/]+)/i);
-
-        if (!m)
-            return "RSS";
-
-        return m[1]
-            .replace(/\.(com|org|net)$/i, "")
-            .toUpperCase();
     }
 
     _finalizeHeadlines(rssHeadlines = [], redditHeadlines = []) {
@@ -2146,8 +1976,181 @@ class RSSDesklet extends Desklet.Desklet {
         this._buildingFeeds = false;
     }
 
-    // CRYPTO
+    // --RSS PARSING
+
+    _parseRSS(xml, feedURL) {
+
+        const items = [];
+
+        const source =
+            this._extractSource(feedURL);
+
+        const rssItems =
+            this._extractRSSItems(xml);
+
+        for (const itemXML of rssItems) {
+
+            const title =
+                this._extractTitle(itemXML);
+
+            const link =
+                this._extractLink(itemXML);
+
+            if (!title || !link)
+                continue;
+
+            const cleanTitle =
+                this._cleanText(title);
+
+            const cleanLink =
+                this._cleanText(link)
+                    .replace(/\s+/g, "");
+
+            const isNSFW =
+                this._extractOver18(itemXML);
+
+            if (isNSFW && !this.allowNSFW)
+                continue;
+
+            const isReddit =
+                feedURL.includes("/r/") &&
+                feedURL.includes("reddit");
+
+            const displayTitle =
+                this._formatHeadline(
+                    source,
+                    cleanTitle,
+                    isReddit
+                );
+
+            const domain =
+                this._getDomain(cleanLink);
+
+            if (this.showFavicons)
+                this._fetchFavicon(domain);
+
+            items.push({
+                title: cleanTitle,
+                link: cleanLink,
+                domain,
+                source: isReddit ? "reddit" : "rss"
+            });
+        }
+
+        const isReddit =
+            feedURL.includes("/r/") &&
+            feedURL.includes("reddit");
+
+        if (isReddit) {
+
+            const max =
+                this.maxRedditHeadlines || 10;
+
+            return items.slice(0, max);
+        }
+
+        return items;
+    }
+
+    _extractRSSItems(xml) {
+
+        let items = [];
+
+        // RSS 2.0 (BBC etc.)
+        const rssMatches = xml.match(/<item[\s\S]*?<\/item>/g);
+
+        if (rssMatches && rssMatches.length) {
+            return rssMatches;
+        }
+
+        // Atom (Reddit etc.)
+        const atomMatches = xml.match(/<entry[\s\S]*?<\/entry>/g);
+
+        if (atomMatches && atomMatches.length) {
+            return atomMatches;
+        }
+
+        return [];
+    }
+
+    _extractTitle(itemXML) {
+
+        // RSS
+        let match =
+            itemXML.match(
+                /<title>([\s\S]*?)<\/title>/i
+            );
+
+        // ATOM (Reddit)
+        if (!match) {
+
+            match =
+                itemXML.match(
+                    /<title[^>]*>([\s\S]*?)<\/title>/i
+                );
+        }
+
+        return match
+            ? match[1]
+            : null;
+    }
+
+    _extractLink(itemXML) {
+
+        // RSS LINK
+
+        let match =
+            itemXML.match(
+                /<link>([\s\S]*?)<\/link>/i
+            );
+
+        if (match)
+            return match[1];
+
+        // ATOM LINK
+
+        match =
+            itemXML.match(
+                /<link[^>]+href=["']([^"']+)["']/i
+            );
+
+        if (match)
+            return match[1];
+
+        // GUID FALLBACK
+
+        match =
+            itemXML.match(
+                /<guid[^>]*>([\s\S]*?)<\/guid>/i
+            );
+
+        return match
+            ? match[1]
+            : null;
+    }
     
+    _extractSource(url) {
+
+        // Reddit special handling
+        const reddit =
+            url.match(/reddit\.com\/r\/([^\/]+)/i);
+
+        if (reddit)
+            return `r/${reddit[1]}`;
+
+        let m =
+            url.match(/https?:\/\/(?:www\.)?([^\/]+)/i);
+
+        if (!m)
+            return "RSS";
+
+        return m[1]
+            .replace(/\.(com|org|net)$/i, "")
+            .toUpperCase();
+    }
+
+    // --CRYPTO DATA FETCHING
+
     _fetchCrypto() {
 
         if (!this.showCrypto) {
@@ -2224,10 +2227,7 @@ class RSSDesklet extends Desklet.Desklet {
         currency
     ) {
 
-        // --------------------------------------------------
         // BUILD LOOKUP MAPS
-        // --------------------------------------------------
-
         let idMap = {};
         let symbolMap = {};
         let nameMap = {};
@@ -2265,10 +2265,7 @@ class RSSDesklet extends Desklet.Desklet {
             }
         });
 
-        // --------------------------------------------------
         // RESOLVE TOKENS
-        // --------------------------------------------------
-
         let validIDs = [];
         let invalidTokens = [];
 
@@ -2328,10 +2325,7 @@ class RSSDesklet extends Desklet.Desklet {
             }
         });
 
-        // --------------------------------------------------
         // INVALID TOKENS
-        // --------------------------------------------------
-
         if (invalidTokens.length > 0) {
 
             global.log(
@@ -2340,10 +2334,7 @@ class RSSDesklet extends Desklet.Desklet {
             );
         }
 
-        // --------------------------------------------------
         // FETCH PRICES
-        // --------------------------------------------------
-
         let url =
             "https://api.coingecko.com/api/v3/coins/markets" +
             "?vs_currency=" + currency +
@@ -2385,139 +2376,161 @@ class RSSDesklet extends Desklet.Desklet {
         );
     }
 
-_parseCrypto(data, currency) {
+    _getCurrencySymbol(currency) {
 
-    if (
-        this._destroyed ||
-        !this.tickerBox1 ||
-        !this.tickerContainer
-    ) {
-        return;
+        const symbols = {
+            usd: "$",
+            aud: "A$",
+            cad: "C$",
+            eur: "€",
+            gbp: "£",
+            jpy: "¥",
+            cny: "¥",
+            inr: "₹",
+            krw: "₩",
+            rub: "₽",
+            chf: "CHF",
+            sek: "kr",
+            nok: "kr",
+            dkk: "kr",
+            nzd: "NZ$",
+            sgd: "S$",
+            hkd: "HK$",
+            brl: "R$",
+            mxn: "$",
+            zar: "R",
+            try: "₺",
+            aed: "د.إ",
+            pln: "zł",
+            thb: "฿",
+            idr: "Rp",
+            myr: "RM",
+            php: "₱",
+            vnd: "₫"
+        };
+
+        currency = (currency || "usd").toLowerCase();
+
+        return symbols[currency] || currency.toUpperCase() + " ";
     }
 
-    let chunks = [];
-
-    for (const item of data) {
+    _parseCrypto(data, currency) {
 
         if (
-            !item ||
-            typeof item !== "object" ||
-            item.current_price === undefined
+            this._destroyed ||
+            !this.tickerBox1 ||
+            !this.tickerContainer
         ) {
-            continue;
+            return;
         }
 
-        // Cache logo
-        if (item.image) {
+        let chunks = [];
 
-            this._fetchCryptoIcon(
-                item.id,
-                item.image
-            );
-        }
+        for (const item of data) {
 
-        const price =
-            item.current_price;
+            if (
+                !item ||
+                typeof item !== "object" ||
+                item.current_price === undefined
+            ) {
+                continue;
+            }
 
-        const change =
-            item.price_change_percentage_24h || 0;
+            // Cache logo
+            if (item.image) {
 
-        // ----------------------------------
-        // SYMBOL
-        // ----------------------------------
-
-        const symbol =
-            (item.symbol || item.id || "")
-                .toUpperCase();
-
-        // ----------------------------------
-        // PRICE FORMAT
-        // ----------------------------------
-
-        let formattedPrice;
-
-        if (price >= 1000) {
-
-            formattedPrice =
-                Number(price).toLocaleString(
-                    undefined,
-                    {
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 2
-                    }
+                this._fetchCryptoIcon(
+                    item.id,
+                    item.image
                 );
+            }
 
-        } else if (price >= 1) {
+            const price =
+                item.current_price;
 
-            formattedPrice =
-                Number(price).toFixed(2);
+            const change =
+                item.price_change_percentage_24h || 0;
 
-        } else {
+            // SYMBOL
+            const symbol =
+                (item.symbol || item.id || "")
+                    .toUpperCase();
 
-            formattedPrice =
-                Number(price).toFixed(6);
+            // PRICE FORMAT
+            let formattedPrice;
+
+            if (price >= 1000) {
+
+                formattedPrice =
+                    Number(price).toLocaleString(
+                        undefined,
+                        {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 2
+                        }
+                    );
+
+            } else if (price >= 1) {
+
+                formattedPrice =
+                    Number(price).toFixed(2);
+
+            } else {
+
+                formattedPrice =
+                    Number(price).toFixed(6);
+            }
+
+            // CHANGE FORMAT
+            const arrow =
+                change >= 0
+                    ? "▲"
+                    : "▼";
+
+            const changeText =
+                Math.abs(change).toFixed(2);
+
+            // TICKER OBJECT
+            chunks.push({
+
+                id: item.id,
+
+                symbol: symbol,
+
+                price: formattedPrice,
+
+                change: change,
+
+                arrow: arrow,
+
+                changeText: changeText,
+
+                currencySymbol:
+                    this._getCurrencySymbol(
+                        currency
+                    )
+            });
         }
 
-        // ----------------------------------
-        // CHANGE FORMAT
-        // ----------------------------------
+        // NO VALID DATA
+        if (chunks.length === 0) {
 
-        const arrow =
-            change >= 0
-                ? "▲"
-                : "▼";
+            global.log(
+                "Crypto update ignored: no valid data"
+            );
 
-        const changeText =
-            Math.abs(change).toFixed(2);
+            return;
+        }
 
-        // ----------------------------------
-        // TICKER OBJECT
-        // ----------------------------------
+        // UPDATE TICKER
+        this.cryptoData = chunks;
 
-        chunks.push({
-
-            id: item.id,
-
-            symbol: symbol,
-
-            price: formattedPrice,
-
-            change: change,
-
-            arrow: arrow,
-
-            changeText: changeText,
-
-            currencySymbol:
-                this._getCurrencySymbol(
-                    currency
-                )
-        });
-    }
-
-    // ----------------------------------
-    // NO VALID DATA
-    // ----------------------------------
-
-    if (chunks.length === 0) {
-
-        global.log(
-            "Crypto update ignored: no valid data"
+        this._rebuildTickerActors(
+            this.lastHeadlines || []
         );
-
-        return;
     }
 
-    // ----------------------------------
-    // UPDATE TICKER
-    // ----------------------------------
-
-    this.cryptoData = chunks;
-
-    this._rebuildTickerActors(
-        this.lastHeadlines || []
-    );
-}
+    // --CRYPTO ICON CACHE
 
     _getCryptoIconDir() {
 
@@ -2562,46 +2575,7 @@ _parseCrypto(data, currency) {
         );
     }
 
-    _createCryptoIcon(id) {
-
-        const path =
-            this._getCryptoIconPath(id);
-
-        if (
-            !GLib.file_test(
-                path,
-                GLib.FileTest.EXISTS
-            )
-        ) {
-            return null;
-        }
-
-        try {
-
-            const file =
-                Gio.file_new_for_path(path);
-
-            const gicon =
-                Gio.FileIcon.new(file);
-
-            const icon =
-                new St.Icon({
-                    gicon,
-                    icon_size: this.fontParts.size
-                });
-
-            icon.set_style(`
-                margin-right: 8px;
-            `);
-
-            return icon;
-
-        } catch (e) {
-
-            global.logError(e);
-            return null;
-        }
-    }
+    // --CRYPTO REFRESH TIMERS
 
     _startCryptoRefresh() {
 
@@ -2628,6 +2602,8 @@ _parseCrypto(data, currency) {
 
         this._removeLoop("crypto");
     }
+
+    // --REDDIT REFRESH TIMERS
 
     _startRedditRefresh() {
 
@@ -2661,7 +2637,7 @@ _parseCrypto(data, currency) {
         this._startRedditRefresh();
     }
 
-    // SETTINGS CALLBACKS
+    // --SETTINGS CALLBACKS
 
     onCryptoUpdatePressed() {
 
@@ -2692,7 +2668,7 @@ _parseCrypto(data, currency) {
         Main.notify("Ethereum Address Copied", "Your Support is Greatly Appreciated.");
     }
 
-    // TICKER
+    // --TICKER ENGINE
 
     _startTicker() {
 
@@ -2750,7 +2726,7 @@ _parseCrypto(data, currency) {
         this._removeLoop("ticker");
     }
 
-    // REFRESH
+    // --FEED REFRESH ENGINE
 
     _startRefresh() {
 
@@ -2784,7 +2760,7 @@ _parseCrypto(data, currency) {
         this._startRefresh();
     }
 
-    // CACHE
+    // --CACHE MANAGEMENT
 
     _getCoinListCacheFile() {
 
@@ -2880,7 +2856,7 @@ _parseCrypto(data, currency) {
         ]);
     }
 
-    // CLEANUP
+    // --CLEANUP
 
     on_desklet_removed() {
 
@@ -2900,7 +2876,6 @@ _parseCrypto(data, currency) {
         this.tickerClone?.destroy();
         this.leftFade?.destroy();
         this.rightFade?.destroy();
-    
     }
 
     _destroyChildrenSafely(container) {
@@ -2926,7 +2901,6 @@ _parseCrypto(data, currency) {
             actor.destroy();
         });
     }
-
 };
 
 function main(metadata, deskletId) {

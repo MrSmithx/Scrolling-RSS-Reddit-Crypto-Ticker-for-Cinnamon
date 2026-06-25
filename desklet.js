@@ -96,7 +96,8 @@ class RSSDesklet extends Desklet.Desklet {
 
         this._httpSession = new Soup.Session();
 
-        this._httpSession.user_agent = "Mozilla/5.0 (X11; Linux x86_64)";
+        this._httpSession.user_agent =
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36";
 
         this._httpSession.timeout = 10;
 
@@ -466,7 +467,6 @@ class RSSDesklet extends Desklet.Desklet {
             return text;
         }
 
-        // Leave room for ellipsis
         const limit = max - 1;
 
         let truncated =
@@ -475,7 +475,6 @@ class RSSDesklet extends Desklet.Desklet {
         const lastSpace =
             truncated.lastIndexOf(" ");
 
-        // Avoid returning only a tiny fragment
         if (lastSpace > limit * 0.5) {
 
             truncated =
@@ -1180,6 +1179,11 @@ class RSSDesklet extends Desklet.Desklet {
                 url
             );
 
+            message.request_headers.append(
+                "User-Agent",
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36"
+            );
+
             this._httpSession.send_and_read_async(
                 message,
                 GLib.PRIORITY_DEFAULT,
@@ -1195,7 +1199,17 @@ class RSSDesklet extends Desklet.Desklet {
                             session.send_and_read_finish(result);
 
                         const status =
-                            message.get_status();
+                            message.status_code;
+
+                        global.log(
+                            `[RSSDesklet] HTTP ${status} ${url}`
+                        );
+
+                        if (status !== 200) {
+
+                            callback(null);
+                            return;
+                        }
 
                         if (status !== Soup.Status.OK) {
 
@@ -1683,12 +1697,6 @@ class RSSDesklet extends Desklet.Desklet {
                 500,
                 () => {
 
-                    this.lastHeadlines = [];
-
-                    this._destroyChildrenSafely(
-                        this.tickerBox1
-                    );
-
                     this._fetchFeeds();
 
                     this._reloadTimer = null;
@@ -1706,8 +1714,6 @@ class RSSDesklet extends Desklet.Desklet {
 
         const fetchId =
             ++this._feedFetchId;
-
-        this.lastHeadlines = [];
 
         this.usingCachedData = false;
 
@@ -1764,62 +1770,76 @@ class RSSDesklet extends Desklet.Desklet {
         };
 
         // Fetch feeds
-        feeds.forEach(feedURL => {
+        const REDDIT_DELAY_MS = 1200;
 
-            this._httpGet(feedURL, stdout => {
+        feeds.forEach((feedURL, index) => {
 
-                const isReddit =
-                    /reddit\.com/i.test(feedURL);
+            const delay =
+                /reddit\.com/i.test(feedURL)
+                    ? index * REDDIT_DELAY_MS
+                    : 0;
 
-                if (!stdout) {
+            Mainloop.timeout_add(delay, () => {
 
-                } else {
+                this._httpGet(feedURL, stdout => {
 
-                    try {
+                    const isReddit =
+                        /reddit\.com/i.test(feedURL);
 
-                        const items =
-                            this._parseRSS(
-                                stdout,
-                                feedURL
+                    if (!stdout) {
+
+                    } else {
+
+                        try {
+
+                            const items =
+                                this._parseRSS(
+                                    stdout,
+                                    feedURL
+                                );
+                            global.log(
+                                `[RSSDesklet] ${feedURL} -> ${items.length} items`
                             );
 
-                        if (isReddit)
-                            state.redditAll.push(...items);
-                        else
-                            state.rssAll.push(...items);
+                            if (isReddit)
+                                state.redditAll.push(...items);
+                            else
+                                state.rssAll.push(...items);
 
-                    } catch (e) {
+                        } catch (e) {
 
-                        global.logError(e);
+                            global.logError(e);
+                        }
                     }
-                }
 
-                state.pending--;
-
-                    if (
-                        state.pending === 0 &&
-                        !state.done
-                    ) {
-
-                        state.done = true;
+                    state.pending--;
 
                         if (
-                            fetchId !== this._feedFetchId
+                            state.pending === 0 &&
+                            !state.done
                         ) {
-                            return;
+
+                            state.done = true;
+
+                            if (
+                                fetchId !== this._feedFetchId
+                            ) {
+                                return;
+                            }
+
+                            global.log(
+                                `[RSSDesklet] Fetch Complete #${fetchId} RSS=${state.rssAll.length} Reddit=${state.redditAll.length}`
+                            );
+
+                            this._finalizeHeadlines(
+                                state.rssAll,
+                                state.redditAll
+                            );
                         }
-
-                        global.log(
-                            `[RSSDesklet] Fetch Complete #${fetchId} RSS=${state.rssAll.length} Reddit=${state.redditAll.length}`
-                        );
-
-                        this._finalizeHeadlines(
-                            state.rssAll,
-                            state.redditAll
-                        );
                     }
-                }
-            );
+                );
+                return false;
+            });
         });
     }
 
@@ -1984,6 +2004,10 @@ class RSSDesklet extends Desklet.Desklet {
 
         const source =
             this._extractSource(feedURL);
+
+        global.log(
+            `[RSSDesklet] Parsed ${items.length} items from ${source}`
+        );
 
         const rssItems =
             this._extractRSSItems(xml);

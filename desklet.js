@@ -873,6 +873,9 @@ class RSSDesklet extends Desklet.Desklet {
 
     _updateFeedStats() {
 
+        global.log("Updating feed stats");
+        global.log(JSON.stringify(this.feedStats));
+
         if (!this.feedStatsMenuItem)
             return;
 
@@ -1776,6 +1779,8 @@ class RSSDesklet extends Desklet.Desklet {
         // Fetch feeds
         feeds.forEach((feedURL, index) => {
 
+            state.pending++;
+
             this._httpGet(feedURL, stdout => {
 
                 try {
@@ -1800,7 +1805,6 @@ class RSSDesklet extends Desklet.Desklet {
                 } finally {
 
                     state.pending--;
-
                     state.scheduled--;
 
                     if (
@@ -1974,7 +1978,6 @@ class RSSDesklet extends Desklet.Desklet {
     }
 
     // --RSS PARSING
-
     _parseRSS(xml, feedURL) {
 
         const items = [];

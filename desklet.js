@@ -716,13 +716,15 @@ class RSSDesklet extends Desklet.Desklet {
         const sort =
             this.redditSort || "hot";
 
-        const feeds = trimmed
+        const combined = trimmed
             .split("\n")
             .map(s => s.trim())
             .filter(Boolean)
-            .map(sub =>
-                `https://www.reddit.com/r/${sub}/${sort}.rss`
-            );
+            .join("+");
+
+        const feeds = [
+            `https://www.reddit.com/r/${combined}/${sort}.rss`
+        ];
 
         this._lastValidRedditFeeds = feeds;
 
@@ -1181,7 +1183,7 @@ class RSSDesklet extends Desklet.Desklet {
 
             message.request_headers.append(
                 "User-Agent",
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36"
+                "RSSDesklet/1.0 (Linux Cinnamon desktop widget)"
             );
 
             this._httpSession.send_and_read_async(
@@ -1198,23 +1200,23 @@ class RSSDesklet extends Desklet.Desklet {
                         const bytes =
                             session.send_and_read_finish(result);
 
+                            const uri = message.get_uri().to_string();
+
                         const status =
                             message.status_code;
 
-                        global.log(
-                            `[RSSDesklet] HTTP ${status} ${url}`
-                        );
+                        if (status === 429) {
 
-                        if (status !== 200) {
+                            Mainloop.timeout_add_seconds(30, () => {
+                                this._request(url, callback);
+                                return false;
+                            });
 
-                            callback(null);
                             return;
                         }
 
                         if (status !== Soup.Status.OK) {
-
                             callback(null);
-
                             return;
                         }
 
@@ -1764,82 +1766,61 @@ class RSSDesklet extends Desklet.Desklet {
             rssAll: [],
             redditAll: [],
 
-            pending: feeds.length,
+            pending: 0,
+
+            scheduled: feeds.length,
 
             done: false
         };
 
         // Fetch feeds
-        const REDDIT_DELAY_MS = 1200;
-
         feeds.forEach((feedURL, index) => {
 
-            const delay =
-                /reddit\.com/i.test(feedURL)
-                    ? index * REDDIT_DELAY_MS
-                    : 0;
+            this._httpGet(feedURL, stdout => {
 
-            Mainloop.timeout_add(delay, () => {
-
-                this._httpGet(feedURL, stdout => {
+                try {
 
                     const isReddit =
                         /reddit\.com/i.test(feedURL);
 
-                    if (!stdout) {
+                    if (stdout) {
 
-                    } else {
-
-                        try {
-
-                            const items =
-                                this._parseRSS(
-                                    stdout,
-                                    feedURL
-                                );
-                            global.log(
-                                `[RSSDesklet] ${feedURL} -> ${items.length} items`
+                        const items =
+                            this._parseRSS(
+                                stdout,
+                                feedURL
                             );
 
-                            if (isReddit)
-                                state.redditAll.push(...items);
-                            else
-                                state.rssAll.push(...items);
-
-                        } catch (e) {
-
-                            global.logError(e);
-                        }
+                        if (isReddit)
+                            state.redditAll.push(...items);
+                        else
+                            state.rssAll.push(...items);
                     }
+
+                } finally {
 
                     state.pending--;
 
-                        if (
-                            state.pending === 0 &&
-                            !state.done
-                        ) {
+                    state.scheduled--;
 
-                            state.done = true;
+                    if (
+                        state.pending === 0 &&
+                        state.scheduled === 0 &&
+                        !state.done
+                    ) {
 
-                            if (
-                                fetchId !== this._feedFetchId
-                            ) {
-                                return;
-                            }
+                        state.done = true;
 
-                            global.log(
-                                `[RSSDesklet] Fetch Complete #${fetchId} RSS=${state.rssAll.length} Reddit=${state.redditAll.length}`
-                            );
-
-                            this._finalizeHeadlines(
-                                state.rssAll,
-                                state.redditAll
-                            );
-                        }
+                        this._finalizeHeadlines(
+                            state.rssAll,
+                            state.redditAll
+                        );
                     }
-                );
-                return false;
+                }
+
             });
+
+            return false;
         });
     }
 
@@ -1959,10 +1940,6 @@ class RSSDesklet extends Desklet.Desklet {
             }
         }
 
-        global.log(
-            `[RSSDesklet] rssEnabled=${rssEnabled} redditEnabled=${redditEnabled} rssClean=${rssClean.length} redditClean=${redditClean.length}`
-        );
-
         if (merged.length === 0) {
             this._destroyChildrenSafely(this.tickerBox1);
             this.tickerBox1.add_actor(new St.Label({ text: "No headlines" }));
@@ -2004,10 +1981,6 @@ class RSSDesklet extends Desklet.Desklet {
 
         const source =
             this._extractSource(feedURL);
-
-        global.log(
-            `[RSSDesklet] Parsed ${items.length} items from ${source}`
-        );
 
         const rssItems =
             this._extractRSSItems(xml);

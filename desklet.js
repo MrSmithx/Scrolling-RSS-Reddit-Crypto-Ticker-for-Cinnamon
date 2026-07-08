@@ -309,7 +309,13 @@ class RSSDesklet extends Desklet.Desklet {
         while (this.offset >= width1)
             this.offset -= width1;
 
-        this.tickerBox1.set_position(
+        this.tickerBox1.translation_x = 
+            -this.offset;
+
+        this.tickerClone.translation_x = 
+            width1 - this.offset;
+
+        /*this.tickerBox1.set_position(
             -this.offset,
             0
         );
@@ -317,7 +323,7 @@ class RSSDesklet extends Desklet.Desklet {
         this.tickerClone.set_position(
             width1 - this.offset,
             0
-        );
+        );*/
     }
 
     _updateCacheIndicator() {
@@ -2692,7 +2698,7 @@ class RSSDesklet extends Desklet.Desklet {
             () => {
 
                 if (this.isPaused) {
-                    GLib.get_monotonic_time() / 1000;
+                    lastTime = GLib.get_monotonic_time() / 1000;
                     return true;
                 }
 
@@ -2734,7 +2740,12 @@ class RSSDesklet extends Desklet.Desklet {
                         this.offset += width1;
                 }
 
-                this._updateTickerPosition();
+                const pixelOffset = Math.round(this.offset);
+
+                if (pixelOffset !== this._lastPixelOffset) {
+                    this._lastPixelOffset = pixelOffset;
+                    this._updateTickerPosition();
+                }
 
                 return true;
             }

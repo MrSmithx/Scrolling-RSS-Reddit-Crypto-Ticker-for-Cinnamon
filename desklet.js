@@ -78,6 +78,7 @@ class RSSDesklet extends Desklet.Desklet {
         ].forEach(k => this._bindSetting(k, this._applyStyle));
 
         [
+            "tickerFps",
             "speed",
             "scrollReverse"
         ].forEach(k => this._bindSetting(k, this._startTicker));
@@ -2674,16 +2675,26 @@ class RSSDesklet extends Desklet.Desklet {
 
         this.offset = 0;
 
-        const step =
+        const fps =
+            this.tickerFps || 30; // user-defined frame rate
+
+        const interval =
+            1000 / fps;
+
+        const speed =
             Math.max(0.5, this.speed / 2);
+
+        let lastTime = GLib.get_monotonic_time() / 1000; // milliseconds
 
         this._addLoop(
             "ticker",
-            25,
+            interval,
             () => {
 
-                if (this.isPaused)
+                if (this.isPaused) {
+                    GLib.get_monotonic_time() / 1000;
                     return true;
+                }
 
                 if (
                     !this.tickerBox1 ||
@@ -2698,10 +2709,19 @@ class RSSDesklet extends Desklet.Desklet {
                 if (width1 <= 0)
                     return true;
 
+                const now =
+                    GLib.get_monotonic_time() / 1000;
+
+                const delta =
+                    (now - lastTime) / 1000;
+
+                lastTime = now;
+
                 const direction =
                     this.scrollReverse ? -1 : 1;
 
-                this.offset += step * direction;
+                this.offset +=
+                    speed * delta * 60 * direction;
 
                 if (!this.scrollReverse) {
 

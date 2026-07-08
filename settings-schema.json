@@ -137,6 +137,7 @@
       "type": "section",
       "title": "Ticker Settings",
       "keys": [
+        "tickerFps",
         "deskletWidth",
         "deskletHeight",
         "headlineMaxLength",
@@ -320,6 +321,15 @@
         "type": "button",
         "description": "Ethereum : 0xe1cA43145846fb476FED56645FCbA0B9B55be79B",
         "callback": "on_copy_ETH"
+    },
+
+    "tickerFps": {
+        "type": "spinbutton",
+        "default": 30,
+        "min": 15,
+        "max": 60,
+        "step": 1,
+        "description": "Ticker FPS"
     },
 
     "deskletWidth": {

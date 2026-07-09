@@ -314,16 +314,6 @@ class RSSDesklet extends Desklet.Desklet {
 
         this.tickerClone.translation_x = 
             width1 - this.offset;
-
-        /*this.tickerBox1.set_position(
-            -this.offset,
-            0
-        );
-
-        this.tickerClone.set_position(
-            width1 - this.offset,
-            0
-        );*/
     }
 
     _updateCacheIndicator() {
@@ -1835,6 +1825,80 @@ class RSSDesklet extends Desklet.Desklet {
         });
     }
 
+    _balanceFeeds(headlines, max, groupBy = "source") {
+
+        if (!headlines || headlines.length === 0 || max <= 0)
+            return [];
+
+        const shuffle = (arr) => {
+
+            for (let i = arr.length - 1; i > 0; i--) {
+
+                const j = Math.floor(Math.random() * (i + 1));
+
+                [arr[i], arr[j]] =
+                    [arr[j], arr[i]];
+            }
+
+            return arr;
+        };
+
+        // Group headlines by source
+        const groups = {};
+
+        headlines.forEach(h => {
+
+            const source = h.feed || "Unknown";
+
+            if (!groups[source])
+                groups[source] = [];
+
+            groups[source].push(h);
+        });
+
+        global.log("[RSSDesklet] Feed groups:");
+
+        Object.keys(groups).forEach(source => {
+            global.log(
+                `  ${source}: ${groups[source].length} headlines`
+            );
+        });
+
+        // Shuffle headlines within each source
+        Object.values(groups).forEach(shuffle);
+
+        // Shuffle the source order so the same feed doesn't
+        // always get first pick.
+        const sources = shuffle(Object.keys(groups));
+
+        const selected = [];
+
+        // Take one headline from each source until we've
+        // reached the maximum or all feeds are exhausted.
+        while (selected.length < max) {
+
+            let added = false;
+
+            for (const source of sources) {
+
+                if (selected.length >= max)
+                    break;
+
+                if (groups[source].length > 0) {
+
+                    selected.push(groups[source].shift());
+                    added = true;
+                }
+            }
+
+            // No more headlines left anywhere.
+            if (!added)
+                break;
+        }
+
+        return selected;
+    }
+
     _finalizeHeadlines(rssHeadlines = [], redditHeadlines = []) {
 
         const dedupe = (arr) => {
@@ -1866,6 +1930,8 @@ class RSSDesklet extends Desklet.Desklet {
 
         const rssClean =
             dedupe(rssHeadlines);
+
+            global.log(JSON.stringify(rssHeadlines[0], null, 2));
 
         let redditClean =
             dedupe(redditHeadlines);
@@ -1902,12 +1968,13 @@ class RSSDesklet extends Desklet.Desklet {
             this.maxRedditHeadlines || 10;
 
         const finalRSS =
-            shuffle([...rssClean]).slice(0, rssMax);
+            this._balanceFeeds(rssClean, rssMax);
 
         const finalReddit =
-            shuffle([...redditClean]).slice(0, redditMax);
+            this._balanceFeeds(redditClean, redditMax);
 
-        const merged = shuffle([...finalRSS, ...finalReddit]);
+        const merged =
+            shuffle([...finalRSS, ...finalReddit]);
 
         if (
             rssClean.length === 0 &&
@@ -2040,7 +2107,8 @@ class RSSDesklet extends Desklet.Desklet {
                 title: cleanTitle,
                 link: cleanLink,
                 domain,
-                source: isReddit ? "reddit" : "rss"
+                source: isReddit ? "reddit" : "rss",
+                feed: source
             });
         }
 
